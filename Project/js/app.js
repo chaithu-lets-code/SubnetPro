@@ -44,6 +44,7 @@ function gotoPage(id, btn) {
   if(id==='ccna') { setTimeout(()=>initCourse('ccna'),0); }
   if(id==='ccnp') { setTimeout(()=>initCourse('ccnp'),0); }
   if(id==='ccie') { setTimeout(()=>initCourse('ccie'),0); }
+  if(id==='interview') { setTimeout(()=>interviewInit(), 100); }
   if(id==='ospf-canvas') { setTimeout(()=>ospfCanvasInit(),100); }
   if(id==='mpls-walker') { setTimeout(()=>mplsInit(),100); }
   if(id==='conv-calc') { setTimeout(()=>{ ccBuildInputs(); convCalcUpdate(); },100); }
