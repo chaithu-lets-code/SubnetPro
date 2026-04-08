@@ -2,36 +2,76 @@
 // BGP REGULAR EXPRESSIONS TOOL  ·  bgp-regex.js
 // SubnetLab Pro — Chaithanya Kumar Katari
 // Features: Live Tester · Visual Builder · Challenge Mode · Cheat Sheet
+// Improvements: 4-byte ASN · AS_SET paths · Regex History · Explain My Regex
+//               Drag-and-drop Builder · Fixed brCiscoToJS · Copy IOS buttons
+//               Persistent Saved Patterns · Diff Summary in Challenges
+//               More Challenges · 4-byte ASN Cheat Sheet section
 // Entry: bgpRegexInit()
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
-let brTab        = 'tester';   // 'tester' | 'builder' | 'challenge' | 'ref'
-let brBuilderParts = [];
-let brChallengeIdx = 0;
-let brChallengeScore = { correct: 0, attempted: 0 };
+let brTab              = 'tester';
+let brBuilderParts     = [];
+let brBuilderDragIdx   = null;
+let brChallengeIdx     = 0;
+let brChallengeScore   = { correct: 0, attempted: 0 };
 let brChallengeAnswered = false;
+let brRegexHistory     = [];        // improvement #3 — history
+let brSavedPatterns    = [];        // improvement #9 — saved patterns
 
-// ─── AS-PATH SAMPLE DATA ─────────────────────────────────────────────────────
+// ─── STORAGE HELPERS ─────────────────────────────────────────────────────────
+function brStorageLoad() {
+  try {
+    const h = localStorage.getItem('br_history');
+    const s = localStorage.getItem('br_saved');
+    if (h) brRegexHistory  = JSON.parse(h);
+    if (s) brSavedPatterns = JSON.parse(s);
+  } catch(e) {}
+}
+function brStorageSave() {
+  try {
+    localStorage.setItem('br_history',  JSON.stringify(brRegexHistory.slice(0, 20)));
+    localStorage.setItem('br_saved',    JSON.stringify(brSavedPatterns));
+  } catch(e) {}
+}
+function brHistoryPush(pattern) {
+  if (!pattern) return;
+  brRegexHistory = [pattern, ...brRegexHistory.filter(p => p !== pattern)].slice(0, 15);
+  brStorageSave();
+}
+
+// ─── AS-PATH SAMPLE DATA (expanded: #1 — more sample paths) ──────────────────
 const BR_SAMPLE_PATHS = [
-  { path: '',             desc: 'Locally originated (empty AS path)' },
-  { path: '100',          desc: 'Single-hop: directly from AS 100' },
-  { path: '200',          desc: 'Single-hop: directly from AS 200' },
-  { path: '65001',        desc: 'Private AS (eBGP customer)' },
-  { path: '100 200',      desc: 'Learned via AS 100, originated in AS 200' },
-  { path: '100 200 300',  desc: 'Three-hop path through AS 100 → 200 → 300' },
-  { path: '200 300',      desc: 'Learned via AS 200, originated in AS 300' },
-  { path: '100 200 65001',desc: 'Transit via AS 100, 200 into private AS' },
-  { path: '300 200 100',  desc: 'Originated in AS 100, transits 200, 300' },
-  { path: '65001 65002',  desc: 'Private-to-private path' },
-  { path: '100 300',      desc: 'AS 100 → AS 300 (skips 200)' },
-  { path: '1000 2000 3000', desc: 'Large ASN path: 1000 → 2000 → 3000' },
-  { path: '100 100 200',  desc: 'AS 100 prepended twice before AS 200' },
-  { path: '400',          desc: 'Single-hop: directly from AS 400' },
-  { path: '400 500 600',  desc: 'Path through AS 400 → 500 → 600' },
-  { path: '100 200 300 400', desc: 'Four-hop path' },
-  { path: '65100',        desc: 'Private AS range (65000–65535)' },
-  { path: '200 65001',    desc: 'Transit via AS 200 into private AS' },
+  // Original paths
+  { path: '',                  desc: 'Locally originated (empty AS path)' },
+  { path: '100',               desc: 'Single-hop: directly from AS 100' },
+  { path: '200',               desc: 'Single-hop: directly from AS 200' },
+  { path: '65001',             desc: 'Private AS (eBGP customer)' },
+  { path: '100 200',           desc: 'Learned via AS 100, originated in AS 200' },
+  { path: '100 200 300',       desc: 'Three-hop path through AS 100 → 200 → 300' },
+  { path: '200 300',           desc: 'Learned via AS 200, originated in AS 300' },
+  { path: '100 200 65001',     desc: 'Transit via AS 100, 200 into private AS' },
+  { path: '300 200 100',       desc: 'Originated in AS 100, transits 200, 300' },
+  { path: '65001 65002',       desc: 'Private-to-private path' },
+  { path: '100 300',           desc: 'AS 100 → AS 300 (skips 200)' },
+  { path: '1000 2000 3000',    desc: 'Large ASN path: 1000 → 2000 → 3000' },
+  { path: '100 100 200',       desc: 'AS 100 prepended twice before AS 200' },
+  { path: '400',               desc: 'Single-hop: directly from AS 400' },
+  { path: '400 500 600',       desc: 'Path through AS 400 → 500 → 600' },
+  { path: '100 200 300 400',   desc: 'Four-hop path' },
+  { path: '65100',             desc: 'Private AS range (65000–65535)' },
+  { path: '200 65001',         desc: 'Transit via AS 200 into private AS' },
+  // New paths for improvement #1
+  { path: '64512',             desc: '4-byte private ASN (64512)' },
+  { path: '131072',            desc: '4-byte public ASN (131072)' },
+  { path: '4200000000',        desc: '4-byte private ASN — very large (4200000000)' },
+  { path: '100 131072 200',    desc: '4-byte ASN 131072 as transit' },
+  { path: '{100 200}',         desc: 'AS_SET: aggregate with AS 100 and AS 200' },
+  { path: '300 {100 200}',     desc: 'Path with AS_SET at origin' },
+  { path: '100 100 100 100 100', desc: 'AS 100 heavily prepended (5×)' },
+  { path: '100 200 300 400 500', desc: 'Five-hop path' },
+  { path: '65535',             desc: 'Last private ASN (65535)' },
+  { path: '64496 64511',       desc: 'Documentation ASNs (RFC 5398)' },
 ];
 
 // ─── REGEX SYMBOL REFERENCE ──────────────────────────────────────────────────
@@ -49,7 +89,7 @@ const BR_SYMBOLS = [
   { sym: '{n,m}',name: 'Repetition range',   desc: 'Match the preceding element between n and m times. [0-9]{1,5} matches an ASN of 1 to 5 digits.' },
 ];
 
-// ─── CHEAT SHEET DATA ────────────────────────────────────────────────────────
+// ─── CHEAT SHEET DATA (improvement #4 — 4-byte ASN section added) ─────────────
 const BR_CHEATSHEET = [
   {
     category: 'Origin & Neighbor',
@@ -105,9 +145,32 @@ const BR_CHEATSHEET = [
       { regex: '^(100 )+100$',            desc: 'AS 100 prepended multiple times — all hops are AS 100',        ios: 'ip as-path access-list 1 permit ^(100 )+100$' },
     ]
   },
+  // improvement #4 — new 4-byte ASN section
+  {
+    category: '4-Byte ASN (ASN32 / RFC 6793)',
+    color: 'var(--purple)',
+    bg: 'rgba(168,85,247,0.08)',
+    items: [
+      { regex: '^[0-9]{5,10}$',
+        desc: 'Single-hop path with a 4-byte (5–10 digit) ASN',
+        ios: 'ip as-path access-list 1 permit ^[0-9]{5,10}$' },
+      { regex: '_[0-9]{5,10}_',
+        desc: '4-byte ASN appears anywhere in the path (transit)',
+        ios: 'ip as-path access-list 1 permit _[0-9]{5,10}_' },
+      { regex: '^(42[0-9]{8}|4[3-2][0-9]{8})_',
+        desc: 'Routes from 4-byte private ASN range 4200000000–4294967294 (RFC 6996)',
+        ios: 'ip as-path access-list 10 permit ^42[0-9]{8}_' },
+      { regex: '^6451[2-9]_|^645[2-9][0-9]_|^64[6-9][0-9]{2}_|^65[0-4][0-9]{2}_|^655[0-2][0-9]_|^6553[0-5]_',
+        desc: 'Routes from 16-bit private ASN range 64512–65535 as first hop',
+        ios: 'ip as-path access-list 10 permit ^6451[2-9]_' },
+      { regex: '^[0-9]+\\.[0-9]+$',
+        desc: 'ASN in dot notation (asdot format, e.g. 1.65000)',
+        ios: 'ip as-path access-list 1 permit ^[0-9]+\\.[0-9]+$' },
+    ]
+  },
 ];
 
-// ─── CHALLENGE DATA ───────────────────────────────────────────────────────────
+// ─── CHALLENGE DATA (improvement #2 — more challenges added) ─────────────────
 const BR_CHALLENGES = [
   {
     id: 1, level: 'CCNA',
@@ -173,6 +236,47 @@ const BR_CHALLENGES = [
     accept: ['_6[5-9][0-9]{3}_', '(^|_)6[5-9][0-9]{3}(_|$)', '_65[0-9]{3}_'],
     explain: '_6[5-9][0-9]{3}_ matches a 5-digit ASN starting with 65, 66, 67, 68, or 69 (the private range 65000–69999 — though technically only 65000–65535 are private, this catches the full 6xxxx range). The _ delimiters ensure it matches a complete ASN token.'
   },
+  // improvement #2 — new challenges
+  {
+    id: 9, level: 'CCNP',
+    goal: 'Match routes with EXACTLY 4 AS hops in the path (four ASNs separated by spaces).',
+    hint: 'Each hop is [0-9]+. Use ^ and $ to anchor. Three spaces means four ASNs.',
+    answer: '^[0-9]+ [0-9]+ [0-9]+ [0-9]+$',
+    accept: ['^[0-9]+ [0-9]+ [0-9]+ [0-9]+$', '^([0-9]+ ){3}[0-9]+$'],
+    explain: '^[0-9]+ [0-9]+ [0-9]+ [0-9]+$ anchors both ends and requires exactly four ASN tokens separated by spaces. ^([0-9]+ ){3}[0-9]+$ is the more concise equivalent using a repeat group — both are correct.'
+  },
+  {
+    id: 10, level: 'CCNP',
+    goal: 'Match routes with 5 OR MORE AS hops (paths that are long — useful for detecting BGP route leaks or poorly optimized paths).',
+    hint: 'Five or more hops means at least four spaces. Use a repeat group like ([0-9]+ ) and set a minimum count with {4,}.',
+    answer: '^([0-9]+ ){4,}[0-9]+$',
+    accept: ['^([0-9]+ ){4,}[0-9]+$'],
+    explain: '^([0-9]+ ){4,} means "four or more repetitions of an ASN-followed-by-space" — that accounts for hops 1–4. The final [0-9]+$ matches the 5th (or later) hop without a trailing space. This pattern is used in route-maps to prefer shorter AS paths or filter excessively long ones.'
+  },
+  {
+    id: 11, level: 'CCIE',
+    goal: 'Match routes that transit BOTH AS 100 and AS 200, in that order (AS 100 must come before AS 200).',
+    hint: 'Chain two _AS_ patterns with .* between them. The first _ anchors AS 100 after a delimiter, .* allows anything in between, then _AS 200_.',
+    answer: '_100_.*_200_',
+    accept: ['_100_.*_200_', '^100_.*_200_', '^100 .*200'],
+    explain: '_100_.*_200_ ensures AS 100 appears first (surrounded by delimiters), then anything (.*), then AS 200 surrounded by delimiters. This is a strict ordered AND match — it will NOT match paths where AS 200 comes before AS 100.'
+  },
+  {
+    id: 12, level: 'CCIE',
+    goal: 'Match routes where any ASN is REPEATED (AS path prepending detected). The same AS number appears more than once anywhere in the path.',
+    hint: 'Use a backreference. Capture an ASN with ([0-9]+), then match a space and the same group again with \\1 (or \\2 depending on nesting).',
+    answer: '([0-9]+) \\1',
+    accept: ['([0-9]+) \\1', '(^| )([0-9]+)( \\2)+', '([0-9]+) ([0-9]+ )*\\1'],
+    explain: '([0-9]+) \\1 captures any ASN and then checks if the same value appears again after a space — a backreference. This detects AS prepending without needing to know which specific AS is being prepended. It works on Cisco IOS and is commonly used in route-maps to detect inbound prepending from peers.'
+  },
+  {
+    id: 13, level: 'CCIE',
+    goal: 'Match routes where AS 100 originated the prefix AND it passed through exactly one transit AS before reaching you (path length = 2: neighbor_AS + 100).',
+    hint: 'Exactly 2 hops means one ASN, one space, then AS 100 at the end. Anchor both sides.',
+    answer: '^[0-9]+ 100$',
+    accept: ['^[0-9]+ 100$', '^[0-9]+_100$'],
+    explain: '^[0-9]+ 100$ means: start of path, any ASN (the directly connected neighbor), one space, then 100 at the end of path. This is a two-hop path where your neighbor is any AS and the originator is AS 100. Useful to set a specific local-preference for routes from a particular origin AS received via any single transit.'
+  },
 ];
 
 // ─── BUILDER BLOCKS ──────────────────────────────────────────────────────────
@@ -186,16 +290,17 @@ const BR_BUILDER_BLOCKS = [
   { label: '|',        val: '|',        tip: 'OR',                  color: 'var(--pink)' },
   { label: '( )',      val: '(__)',      tip: 'Group',               color: 'var(--purple)' },
   { label: '{n,m}',    val: '{__,__}',  tip: 'Repeat range',        color: 'var(--amber)' },
+  { label: ' ',        val: ' ',        tip: 'Space (AS separator)', color: 'var(--muted)' },
   { label: '⌫',        val: '__DEL__',  tip: 'Remove last block',   color: 'var(--red)' },
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-// Convert a Cisco BGP regex to a JS-compatible RegExp
-// Key difference: _ in Cisco = (^|$|[ ,{}]) in JS regex
+// improvement #7 — fixed brCiscoToJS using non-capturing groups and correct edge handling
 function brCiscoToJS(pattern) {
-  // Replace _ with a character class representing all BGP delimiters
-  const jsPattern = pattern.replace(/_/g, '(^|$|[ ,{}])');
+  // _ in Cisco BGP regex = any delimiter: space, comma, braces, start/end of string
+  // Use non-capturing (?:...) for performance; handle _ correctly at all positions
+  const jsPattern = pattern.replace(/_/g, '(?:^|$|[ ,{}])');
   try {
     return new RegExp(jsPattern);
   } catch(e) {
@@ -211,7 +316,8 @@ function brMatchPath(jsRegex, path) {
 function brValidateRegex(pattern) {
   if (!pattern) return { valid: false, err: 'Empty pattern' };
   try {
-    const jsPattern = pattern.replace(/_/g, '(^|$|[ ,{}])');
+    // improvement #7 — use same non-capturing group fix
+    const jsPattern = pattern.replace(/_/g, '(?:^|$|[ ,{}])');
     new RegExp(jsPattern);
     return { valid: true };
   } catch(e) {
@@ -226,10 +332,75 @@ function brLevelBg(level) {
   return level === 'CCNA' ? 'rgba(74,222,128,0.12)' : level === 'CCNP' ? 'rgba(91,156,246,0.12)' : 'rgba(244,114,182,0.12)';
 }
 
+// improvement #5 — plain-English regex explainer
+function brExplainRegex(pattern) {
+  if (!pattern) return '';
+  const parts = [];
+  let p = pattern;
+
+  // Anchors
+  const hasStart = p.startsWith('^');
+  const hasEnd   = p.endsWith('$') && !p.endsWith('\\$');
+  if (hasStart && hasEnd && p === '^$') return 'Matches ONLY empty AS paths — locally originated routes.';
+  if (hasStart) parts.push('path must START with the following');
+  if (hasEnd)   parts.push('path must END with the preceding element');
+
+  // Common full patterns
+  if (p === '.*')  return 'Matches ALL routes regardless of AS path (universal permit).';
+  if (p === '^[0-9]+$') return 'Matches paths with exactly ONE ASN — single-hop routes from a directly connected eBGP neighbor that also originated the prefix.';
+
+  const clauses = [];
+
+  // Backreference — prepending
+  if (/\(.*\).*\\[0-9]/.test(p)) clauses.push('detects repeated ASNs (AS prepending)');
+
+  // Start anchor + specific ASN
+  const startAsn = p.match(/^\^(\d+)_/);
+  if (startAsn) clauses.push(`routes received directly from AS ${startAsn[1]} (first hop)`);
+
+  // End anchor + specific ASN
+  const endAsn = p.match(/_(\d+)\$$/) ;
+  if (endAsn) clauses.push(`routes originated inside AS ${endAsn[1]} (last AS in path)`);
+
+  // Transit ASN (surrounded by _)
+  const transitMatches = [...p.matchAll(/_(\d+)_/g)];
+  transitMatches.forEach(m => clauses.push(`AS ${m[1]} appears as a transit AS anywhere in the path`));
+
+  // Lone _ at start => after any delimiter
+  if (p.startsWith('_') && !p.startsWith('^')) clauses.push('AS can appear at start or after any delimiter');
+
+  // .* in middle => any number of hops in between
+  if (/\.\*/.test(p) && !(/^\.\*$/.test(p))) clauses.push('any number of intermediate ASes are allowed');
+
+  // Private AS patterns
+  if (/6\[5-9\]/.test(p) || /65\[0-9\]/.test(p)) clauses.push('matches private ASNs in the 65000–65535 range');
+
+  // Path length patterns
+  const repeatGroup = p.match(/\(\[0-9\]\+ \)\{(\d+),(\d*)\}/);
+  if (repeatGroup) {
+    const min = repeatGroup[1], max = repeatGroup[2];
+    if (max) clauses.push(`path length between ${parseInt(min)+1} and ${parseInt(max)+1} hops`);
+    else clauses.push(`path length of at least ${parseInt(min)+1} hops`);
+  }
+
+  // 4-byte ASN
+  if (/\[0-9\]\{5,/.test(p)) clauses.push('involves 4-byte (32-bit) ASNs with 5 or more digits');
+
+  if (clauses.length === 0) {
+    return `Matches AS paths satisfying the pattern: <code>${brEscape(pattern)}</code>. Use the symbol reference below for token details.`;
+  }
+
+  let sentence = 'This regex ' + clauses.join('; ') + '.';
+  if (hasStart && !startAsn) sentence = 'Anchored to the START of path — ' + sentence;
+  if (hasEnd   && !endAsn)   sentence += ' Anchored to the END of path.';
+  return sentence;
+}
+
 // ─── MAIN INIT ────────────────────────────────────────────────────────────────
 function bgpRegexInit() {
   const page = document.getElementById('page-bgp-regex');
   if (!page) return;
+  brStorageLoad();
   brInjectStyles();
   page.innerHTML = brShell();
   brSwitchTab('tester');
@@ -254,6 +425,7 @@ function brShell() {
     <button class="br-tab"        id="br-tab-builder"    onclick="brSwitchTab('builder')">🔧 Regex Builder</button>
     <button class="br-tab"        id="br-tab-challenge"  onclick="brSwitchTab('challenge')">🎯 Challenge Mode</button>
     <button class="br-tab"        id="br-tab-ref"        onclick="brSwitchTab('ref')">📋 Cheat Sheet</button>
+    <button class="br-tab"        id="br-tab-saved"      onclick="brSwitchTab('saved')">🔖 Saved Patterns</button>
   </div>
 
   <!-- TAB CONTENT -->
@@ -274,6 +446,7 @@ function brSwitchTab(tab) {
   if (tab === 'builder')   { content.innerHTML = brBuilderHTML();  brBuilderRender(); }
   if (tab === 'challenge') { content.innerHTML = brChallengeHTML(); brLoadChallenge(brChallengeIdx); }
   if (tab === 'ref')       { content.innerHTML = brRefHTML(); }
+  if (tab === 'saved')     { content.innerHTML = brSavedHTML(); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -294,6 +467,7 @@ function brTesterHTML() {
       { label: 'Single Hop',         val: '^[0-9]+$' },
       { label: 'Transit via AS 200', val: '_200_' },
       { label: 'Private AS',         val: '^65' },
+      { label: '4-byte ASN',         val: '_[0-9]{5,10}_' },
     ].map(p => `<button class="br-preset-btn" onclick="brLoadPreset('${p.val}')">${p.label}</button>`).join('')}
   </div>
 
@@ -301,13 +475,26 @@ function brTesterHTML() {
   <div class="br-input-row">
     <div class="br-input-group" style="flex:2">
       <label class="br-label">BGP Regex (Cisco IOS Syntax)</label>
-      <input type="text" id="br-regex-input" class="br-input" placeholder="e.g. ^100_" oninput="brRunTest()" spellcheck="false" autocomplete="off">
+      <div style="position:relative;display:flex;gap:6px;align-items:center">
+        <input type="text" id="br-regex-input" class="br-input" style="flex:1"
+               placeholder="e.g. ^100_" oninput="brRunTest()" spellcheck="false" autocomplete="off">
+        <!-- improvement #3 — history dropdown -->
+        <button class="br-hist-btn" id="br-hist-toggle" onclick="brToggleHistory()" title="History">🕑</button>
+        <div class="br-hist-dropdown" id="br-hist-dropdown" style="display:none"></div>
+      </div>
       <div class="br-regex-err" id="br-regex-err" style="display:none"></div>
     </div>
     <div class="br-input-group" style="flex:1">
       <label class="br-label">IOS Command Preview</label>
       <div class="br-ios-preview" id="br-ios-preview">ip as-path access-list 1 permit <em>…</em></div>
     </div>
+  </div>
+
+  <!-- improvement #5 — Explain My Regex + Save button row -->
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn-reset" onclick="brExplainCurrent()" style="font-size:11px;padding:5px 12px">💬 Explain My Regex</button>
+    <button class="btn btn-reset" onclick="brSaveCurrent()"    style="font-size:11px;padding:5px 12px">🔖 Save Pattern</button>
+    <div id="br-explain-output" style="flex:1;font-size:12px;color:var(--cyan);line-height:1.6"></div>
   </div>
 
   <!-- Inline symbol explainer -->
@@ -397,6 +584,9 @@ function brRunTest() {
   // Highlight symbols in use
   brHighlightSymbols(pattern);
 
+  // improvement #3 — push valid non-empty patterns to history
+  if (pattern && v.valid) brHistoryPush(pattern);
+
   if (!pattern) { brResetTable(); brUpdateStats(0, 0, 'Enter a regex above'); return; }
 
   const jsRegex = brCiscoToJS(pattern);
@@ -418,7 +608,7 @@ function brRunTest() {
   brUpdateStats(matched, total - matched, matched + ' / ' + total + ' paths matched');
 
   // Custom path
-  const customInput = document.getElementById('br-custom-path');
+  const customInput  = document.getElementById('br-custom-path');
   const customResult = document.getElementById('br-custom-result');
   if (customInput && customResult) {
     const cp = customInput.value.trim();
@@ -431,6 +621,10 @@ function brRunTest() {
       customResult.innerHTML = '';
     }
   }
+
+  // Clear explain output on new input
+  const expOut = document.getElementById('br-explain-output');
+  if (expOut) expOut.innerHTML = '';
 }
 
 function brLoadPreset(val) {
@@ -472,8 +666,62 @@ function brHighlightSymbols(pattern) {
     found.map(s => `<span class="br-sym-hint" title="${s.desc}">${s.sym} <em>${s.name}</em></span>`).join('');
 }
 
+// improvement #5 — Explain My Regex button handler
+function brExplainCurrent() {
+  const input  = document.getElementById('br-regex-input');
+  const expOut = document.getElementById('br-explain-output');
+  if (!input || !expOut) return;
+  const pattern = input.value.trim();
+  if (!pattern) { expOut.innerHTML = '<span style="color:var(--muted)">Enter a regex first.</span>'; return; }
+  const v = brValidateRegex(pattern);
+  if (!v.valid) { expOut.innerHTML = `<span style="color:var(--red)">⚠ Invalid regex — fix syntax first.</span>`; return; }
+  expOut.innerHTML = `<span style="color:var(--cyan)">💬 ${brExplainRegex(pattern)}</span>`;
+}
+
+// improvement #9 — Save current pattern
+function brSaveCurrent() {
+  const input = document.getElementById('br-regex-input');
+  if (!input || !input.value.trim()) return;
+  const pattern = input.value.trim();
+  const v = brValidateRegex(pattern);
+  if (!v.valid) return;
+  const label = prompt('Label for this saved pattern (optional):', pattern);
+  if (label === null) return; // cancelled
+  brSavedPatterns = brSavedPatterns.filter(s => s.pattern !== pattern);
+  brSavedPatterns.unshift({ pattern, label: label || pattern, saved: Date.now() });
+  brStorageSave();
+  const expOut = document.getElementById('br-explain-output');
+  if (expOut) expOut.innerHTML = `<span style="color:var(--green)">✓ Pattern saved to 🔖 Saved Patterns tab.</span>`;
+}
+
+// improvement #3 — History toggle
+function brToggleHistory() {
+  const dd = document.getElementById('br-hist-dropdown');
+  if (!dd) return;
+  if (dd.style.display !== 'none') { dd.style.display = 'none'; return; }
+  if (!brRegexHistory.length) {
+    dd.innerHTML = `<div class="br-hist-empty">No history yet</div>`;
+  } else {
+    dd.innerHTML = brRegexHistory.map(h =>
+      `<div class="br-hist-item" onclick="brLoadPreset('${brEscapeAttr(h)}');document.getElementById('br-hist-dropdown').style.display='none'">
+        <code>${brEscape(h)}</code>
+        <span class="br-hist-explain">${brExplainRegex(h).slice(0, 60)}…</span>
+      </div>`
+    ).join('') +
+    `<div class="br-hist-clear" onclick="brClearHistory()">🗑 Clear history</div>`;
+  }
+  dd.style.display = 'block';
+}
+
+function brClearHistory() {
+  brRegexHistory = [];
+  brStorageSave();
+  const dd = document.getElementById('br-hist-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 2 — VISUAL BUILDER
+// TAB 2 — VISUAL BUILDER (improvement #6 — drag-and-drop reorder)
 // ══════════════════════════════════════════════════════════════════════════════
 function brBuilderHTML() {
   return `
@@ -481,6 +729,7 @@ function brBuilderHTML() {
   <div class="callout callout-info" style="margin-bottom:16px">
     💡 Click blocks below to build a BGP regex visually. The regex and IOS command are generated live.
     When you click <strong>ASN</strong>, type an AS number in the prompt.
+    <strong>Drag tokens</strong> in the canvas to reorder them.
   </div>
 
   <!-- Block palette -->
@@ -488,8 +737,8 @@ function brBuilderHTML() {
     <div class="card-hdr">🧱 Building Blocks — click to add</div>
     <div class="br-block-palette">
       ${BR_BUILDER_BLOCKS.map(b => `
-      <button class="br-block-btn" style="border-color:${b.color};color:${b.color}" 
-              onclick="brBuilderAdd('${b.val}')" title="${b.tip}">
+      <button class="br-block-btn" style="border-color:${b.color};color:${b.color}"
+              onclick="brBuilderAdd('${brEscapeAttr(b.val)}')" title="${b.tip}">
         ${b.label}
         <span class="br-block-tip">${b.tip}</span>
       </button>`).join('')}
@@ -498,8 +747,10 @@ function brBuilderHTML() {
 
   <!-- Builder canvas -->
   <div class="card" style="margin-bottom:16px">
-    <div class="card-hdr">🖥 Your Regex</div>
-    <div class="br-builder-canvas" id="br-builder-canvas">
+    <div class="card-hdr">🖥 Your Regex — <span style="font-weight:400;font-size:11px;color:var(--muted)">drag tokens to reorder · click token to remove</span></div>
+    <div class="br-builder-canvas" id="br-builder-canvas"
+         ondragover="event.preventDefault()"
+         ondrop="brBuilderDrop(event)">
       <span class="br-builder-empty" id="br-builder-empty">Click blocks above to start building…</span>
     </div>
     <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center">
@@ -517,20 +768,27 @@ function brBuilderHTML() {
 
 function brBuilderRender() {
   const canvas = document.getElementById('br-builder-canvas');
-  const empty  = document.getElementById('br-builder-empty');
   const iosEl  = document.getElementById('br-builder-ios');
   if (!canvas) return;
 
   if (brBuilderParts.length === 0) {
     canvas.innerHTML = `<span class="br-builder-empty">Click blocks above to start building…</span>`;
     if (iosEl) iosEl.innerHTML = `ip as-path access-list 1 permit <em style="color:var(--muted)">…</em>`;
-    document.getElementById('br-builder-results') && (document.getElementById('br-builder-results').innerHTML = '');
+    const r = document.getElementById('br-builder-results');
+    if (r) r.innerHTML = '';
     return;
   }
 
   const regex = brBuilderParts.join('');
+  // improvement #6 — each token is draggable
   canvas.innerHTML = brBuilderParts.map((p, i) =>
-    `<span class="br-builder-token" onclick="brBuilderRemoveAt(${i})" title="Click to remove">${brEscape(p)}</span>`
+    `<span class="br-builder-token"
+       draggable="true"
+       ondragstart="brBuilderDragStart(${i})"
+       ondragover="event.preventDefault()"
+       ondrop="event.stopPropagation();brBuilderDropOnToken(event,${i})"
+       onclick="brBuilderRemoveAt(${i})"
+       title="Click to remove · drag to reorder">${brEscape(p)}</span>`
   ).join('') + `<span class="br-builder-cursor">|</span>`;
 
   if (iosEl) {
@@ -547,7 +805,7 @@ function brBuilderRender() {
   }
 
   const jsRegex = brCiscoToJS(regex);
-  const hits = BR_SAMPLE_PATHS.filter(p => brMatchPath(jsRegex, p.path));
+  const hits   = BR_SAMPLE_PATHS.filter(p => brMatchPath(jsRegex, p.path));
   const misses = BR_SAMPLE_PATHS.filter(p => !brMatchPath(jsRegex, p.path));
 
   resultsEl.innerHTML = `
@@ -571,6 +829,22 @@ function brBuilderRender() {
   </div>`;
 }
 
+// improvement #6 — drag handlers
+function brBuilderDragStart(idx) {
+  brBuilderDragIdx = idx;
+}
+function brBuilderDropOnToken(event, targetIdx) {
+  if (brBuilderDragIdx === null || brBuilderDragIdx === targetIdx) return;
+  const moved = brBuilderParts.splice(brBuilderDragIdx, 1)[0];
+  const insertAt = brBuilderDragIdx < targetIdx ? targetIdx - 1 : targetIdx;
+  brBuilderParts.splice(insertAt, 0, moved);
+  brBuilderDragIdx = null;
+  brBuilderRender();
+}
+function brBuilderDrop(event) {
+  brBuilderDragIdx = null;
+}
+
 function brBuilderAdd(val) {
   if (val === '__DEL__') { brBuilderParts.pop(); brBuilderRender(); return; }
   if (val === '__ASN__') {
@@ -580,7 +854,7 @@ function brBuilderAdd(val) {
     brBuilderRender();
     return;
   }
-  if (val === '(__)')  { brBuilderParts.push('(', ')'); brBuilderRender(); return; }
+  if (val === '(__)') { brBuilderParts.push('(', ')'); brBuilderRender(); return; }
   if (val === '{__,__}') {
     const n = prompt('Min repeats (n):');
     const m = prompt('Max repeats (m), or leave blank for exact:');
@@ -617,7 +891,7 @@ function brBuilderSendToTester() {
 // TAB 3 — CHALLENGE MODE
 // ══════════════════════════════════════════════════════════════════════════════
 function brChallengeHTML() {
-  const c = BR_CHALLENGES[brChallengeIdx];
+  const c     = BR_CHALLENGES[brChallengeIdx];
   const total = BR_CHALLENGES.length;
   return `
 <div class="br-section">
@@ -679,7 +953,7 @@ function brChallengeHTML() {
 }
 
 function brLoadChallenge(idx) {
-  brChallengeIdx = idx;
+  brChallengeIdx   = idx;
   brChallengeAnswered = false;
   const content = document.getElementById('br-tab-content');
   if (content) content.innerHTML = brChallengeHTML();
@@ -697,13 +971,13 @@ function brShowHint() {
 
 function brChallengeCheck() {
   if (brChallengeAnswered) return;
-  const input = document.getElementById('br-ch-input');
+  const input    = document.getElementById('br-ch-input');
   const resultEl = document.getElementById('br-ch-result');
   const navEl    = document.getElementById('br-ch-nav');
   if (!input || !resultEl) return;
 
   const answer = input.value.trim();
-  const c = BR_CHALLENGES[brChallengeIdx];
+  const c      = BR_CHALLENGES[brChallengeIdx];
 
   if (!answer) {
     resultEl.innerHTML = `<div class="callout callout-warn">⚠ Please enter a regex before checking.</div>`;
@@ -719,31 +993,38 @@ function brChallengeCheck() {
   brChallengeAnswered = true;
   brChallengeScore.attempted++;
 
-  // Check if functionally correct against accepted answers
   const jsAnswer  = brCiscoToJS(answer);
   const jsCorrect = brCiscoToJS(c.accept[0]);
 
-  // Test against all sample paths — both should produce the same results
   const answerResults  = BR_SAMPLE_PATHS.map(p => brMatchPath(jsAnswer,  p.path));
   const correctResults = BR_SAMPLE_PATHS.map(p => brMatchPath(jsCorrect, p.path));
   const functionallyCorrect = answerResults.every((r, i) => r === correctResults[i]);
-
-  // Also accept exact string matches
   const exactMatch = c.accept.includes(answer);
   const isCorrect  = exactMatch || functionallyCorrect;
 
   if (isCorrect) brChallengeScore.correct++;
 
-  // Build path-by-path comparison table
-  const tableRows = BR_SAMPLE_PATHS.slice(0, 10).map((p, i) => {
+  // improvement #10 — diff summary: count over-matches and under-matches
+  const overMatches  = answerResults.filter((r, i) => r  && !correctResults[i]).length;
+  const underMatches = answerResults.filter((r, i) => !r && correctResults[i]).length;
+  let diffSummary = '';
+  if (!isCorrect) {
+    diffSummary = `<div class="br-diff-summary">
+      ${overMatches  ? `<span class="br-diff-over">Over-matches: +${overMatches} extra path(s) matched that shouldn't be</span>` : ''}
+      ${underMatches ? `<span class="br-diff-under">Under-matches: −${underMatches} path(s) should match but don't</span>` : ''}
+    </div>`;
+  }
+
+  // Path-by-path comparison table (all paths)
+  const tableRows = BR_SAMPLE_PATHS.map((p, i) => {
     const yourHit    = answerResults[i];
     const correctHit = correctResults[i];
     const agree      = yourHit === correctHit;
     return `<tr class="${agree ? '' : 'br-ch-disagree'}">
       <td><code>${p.path || '<em>empty</em>'}</code></td>
-      <td class="br-ch-cell ${yourHit ? 'br-match-yes' : 'br-match-no'}">${yourHit ? '✓' : '✗'}</td>
+      <td class="br-ch-cell ${yourHit    ? 'br-match-yes' : 'br-match-no'}">${yourHit    ? '✓' : '✗'}</td>
       <td class="br-ch-cell ${correctHit ? 'br-match-yes' : 'br-match-no'}">${correctHit ? '✓' : '✗'}</td>
-      <td class="br-ch-cell">${agree ? '✓' : '⚠'}</td>
+      <td class="br-ch-cell">${agree ? '✓' : '<span style="color:var(--red)">⚠</span>'}</td>
     </tr>`;
   }).join('');
 
@@ -753,22 +1034,24 @@ function brChallengeCheck() {
       ? `<strong style="color:var(--green)">✓ Correct!</strong> Well done — your regex works as expected.`
       : `<strong style="color:var(--red)">✗ Not quite.</strong> Your regex doesn't match the same paths as the expected answer.`}
   </div>
+  ${diffSummary}
   <div class="card" style="margin-bottom:14px">
     <div class="card-hdr">📖 Explanation</div>
     <div style="font-size:13px;line-height:1.7;color:var(--text2)">
-      <div style="margin-bottom:8px"><strong>Expected answer:</strong> 
+      <div style="margin-bottom:8px"><strong>Expected answer:</strong>
         <code class="br-inline-code">${brEscape(c.answer)}</code>
         &nbsp;→&nbsp;
         <span style="color:var(--muted);font-size:12px">ip as-path access-list 1 permit ${brEscape(c.answer)}</span>
       </div>
-      <div style="margin-bottom:8px"><strong>Your answer:</strong> 
+      <div style="margin-bottom:8px"><strong>Your answer:</strong>
         <code class="br-inline-code" style="border-color:${isCorrect ? 'var(--green)' : 'var(--red)'}">${brEscape(answer)}</code>
       </div>
       <div>${c.explain}</div>
     </div>
   </div>
   <div class="card" style="margin-bottom:14px">
-    <div class="card-hdr">🔬 Path Comparison (first 10 paths)</div>
+    <div class="card-hdr">🔬 Path Comparison (all ${BR_SAMPLE_PATHS.length} paths)</div>
+    <div style="overflow-x:auto">
     <table class="br-ch-table">
       <thead><tr>
         <th>AS Path</th>
@@ -778,6 +1061,7 @@ function brChallengeCheck() {
       </tr></thead>
       <tbody>${tableRows}</tbody>
     </table>
+    </div>
   </div>`;
 
   if (navEl) navEl.style.display = 'flex';
@@ -789,10 +1073,9 @@ function brChallengeNext() {
   if (brChallengeIdx < BR_CHALLENGES.length - 1) {
     brLoadChallenge(brChallengeIdx + 1);
   } else {
-    // Final score screen
     const content = document.getElementById('br-tab-content');
     if (!content) return;
-    const pct = Math.round((brChallengeScore.correct / BR_CHALLENGES.length) * 100);
+    const pct   = Math.round((brChallengeScore.correct / BR_CHALLENGES.length) * 100);
     const grade = pct >= 85 ? 'CCIE Ready 🏆' : pct >= 65 ? 'CCNP Level 📗' : 'Keep Practicing 📘';
     content.innerHTML = `
     <div class="br-section" style="text-align:center;padding:32px 16px">
@@ -810,14 +1093,14 @@ function brChallengeNext() {
 }
 
 function brChallengeReset() {
-  brChallengeIdx = 0;
-  brChallengeScore = { correct: 0, attempted: 0 };
+  brChallengeIdx      = 0;
+  brChallengeScore    = { correct: 0, attempted: 0 };
   brChallengeAnswered = false;
   brLoadChallenge(0);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 4 — CHEAT SHEET
+// TAB 4 — CHEAT SHEET (improvement #8 — Copy IOS buttons)
 // ══════════════════════════════════════════════════════════════════════════════
 function brRefHTML() {
   return `
@@ -825,7 +1108,7 @@ function brRefHTML() {
 
   <div class="callout callout-info" style="margin-bottom:20px">
     💡 All patterns use <strong>Cisco IOS BGP regex syntax</strong>. The underscore <code>_</code> is special — it matches any AS path delimiter: space, comma, start, or end of string.
-    Click <strong>▶ Test</strong> on any pattern to load it in the Live Tester.
+    Click <strong>▶ Test</strong> on any pattern to load it in the Live Tester. Click <strong>📋 Copy</strong> to copy the IOS command.
   </div>
 
   ${BR_CHEATSHEET.map(cat => `
@@ -836,8 +1119,8 @@ function brRefHTML() {
         <thead><tr>
           <th style="width:200px">Regex</th>
           <th>What It Matches</th>
-          <th style="width:320px">IOS Command</th>
-          <th style="width:70px">Test</th>
+          <th style="width:300px">IOS Command</th>
+          <th style="width:110px">Actions</th>
         </tr></thead>
         <tbody>
           ${cat.items.map(item => `
@@ -845,8 +1128,9 @@ function brRefHTML() {
             <td><code class="br-ref-code">${brEscape(item.regex)}</code></td>
             <td class="br-ref-desc">${item.desc}</td>
             <td><code class="br-ref-ios">${brEscape(item.ios)}</code></td>
-            <td>
-              <button class="br-test-btn" onclick="brRefTest('${item.regex.replace(/'/g, "\\'")}')">▶ Test</button>
+            <td style="white-space:nowrap">
+              <button class="br-test-btn" onclick="brRefTest('${brEscapeAttr(item.regex)}')">▶ Test</button>
+              <button class="br-copy-btn" onclick="brCopyIOS('${brEscapeAttr(item.ios)}', this)" title="Copy IOS command">📋</button>
             </td>
           </tr>`).join('')}
         </tbody>
@@ -862,8 +1146,8 @@ function brRefHTML() {
       <div style="background:var(--bg3);border-radius:8px;padding:12px">
         <div style="font-family:var(--mono);font-size:10px;font-weight:700;color:var(--amber);margin-bottom:6px">The _ Gotcha</div>
         <div style="font-size:12px;color:var(--muted2);line-height:1.7">
-          In Cisco BGP regex, <code>_</code> is NOT just a space. It matches space, comma, open/close brace, start-of-string, and end-of-string. 
-          This is why <code>_100_</code> correctly matches AS 100 whether it's the first, last, or middle AS — 
+          In Cisco BGP regex, <code>_</code> is NOT just a space. It matches space, comma, open/close brace, start-of-string, and end-of-string.
+          This is why <code>_100_</code> correctly matches AS 100 whether it's the first, last, or middle AS —
           and why you should always use <code>_</code> instead of a literal space to delimit ASNs.
         </div>
       </div>
@@ -871,8 +1155,8 @@ function brRefHTML() {
       <div style="background:var(--bg3);border-radius:8px;padding:12px">
         <div style="font-family:var(--mono);font-size:10px;font-weight:700;color:var(--cyan);margin-bottom:6px">Implicit Deny</div>
         <div style="font-size:12px;color:var(--muted2);line-height:1.7">
-          An <code>ip as-path access-list</code> has an <strong>implicit deny all</strong> at the end, just like a standard ACL. 
-          If you only want to filter specific routes and permit the rest, always add <code>permit .*</code> as the last entry. 
+          An <code>ip as-path access-list</code> has an <strong>implicit deny all</strong> at the end, just like a standard ACL.
+          If you only want to filter specific routes and permit the rest, always add <code>permit .*</code> as the last entry.
           Forgetting this in production drops all BGP routes — a common CCIE lab trap.
         </div>
       </div>
@@ -938,12 +1222,108 @@ function brRefTest(regex) {
   }, 80);
 }
 
+// improvement #8 — Copy IOS command to clipboard
+function brCopyIOS(text, btn) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓';
+    btn.style.color = 'var(--green)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
+  }).catch(() => {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const orig = btn.textContent;
+    btn.textContent = '✓'; btn.style.color = 'var(--green)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB 5 — SAVED PATTERNS (improvement #9 — persistent saved patterns)
+// ══════════════════════════════════════════════════════════════════════════════
+function brSavedHTML() {
+  if (!brSavedPatterns.length) {
+    return `
+<div class="br-section">
+  <div class="callout callout-info">
+    🔖 No saved patterns yet. Go to the <strong>Live Tester</strong> tab, type a regex, and click <strong>Save Pattern</strong>.
+  </div>
+</div>`;
+  }
+  return `
+<div class="br-section">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div style="font-family:var(--mono);font-size:12px;color:var(--muted)">${brSavedPatterns.length} saved pattern(s)</div>
+    <button class="br-ch-reset-btn" onclick="brClearSaved()">🗑 Clear All</button>
+  </div>
+  <div class="br-table-wrap">
+    <table class="br-ref-table">
+      <thead><tr>
+        <th>Pattern</th>
+        <th>Label</th>
+        <th>Plain English</th>
+        <th style="width:140px">Actions</th>
+      </tr></thead>
+      <tbody>
+        ${brSavedPatterns.map((s, i) => `
+        <tr>
+          <td><code class="br-ref-code">${brEscape(s.pattern)}</code></td>
+          <td style="color:var(--muted2);font-size:12px">${brEscape(s.label)}</td>
+          <td style="color:var(--muted2);font-size:11px;line-height:1.5">${brExplainRegex(s.pattern)}</td>
+          <td style="white-space:nowrap">
+            <button class="br-test-btn" onclick="brSavedLoad('${brEscapeAttr(s.pattern)}')">▶ Test</button>
+            <button class="br-copy-btn" onclick="brCopyIOS('ip as-path access-list 1 permit ${brEscapeAttr(s.pattern)}', this)" title="Copy IOS">📋</button>
+            <button class="br-copy-btn" style="color:var(--red)" onclick="brSavedDelete(${i})" title="Delete">✕</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+</div>`;
+}
+
+function brSavedLoad(pattern) {
+  brSwitchTab('tester');
+  setTimeout(() => {
+    const input = document.getElementById('br-regex-input');
+    if (input) { input.value = pattern; brRunTest(); }
+  }, 80);
+}
+
+function brSavedDelete(i) {
+  brSavedPatterns.splice(i, 1);
+  brStorageSave();
+  const content = document.getElementById('br-tab-content');
+  if (content) content.innerHTML = brSavedHTML();
+}
+
+function brClearSaved() {
+  if (!confirm('Clear all saved patterns?')) return;
+  brSavedPatterns = [];
+  brStorageSave();
+  const content = document.getElementById('br-tab-content');
+  if (content) content.innerHTML = brSavedHTML();
+}
+
 // ─── UTILITY ─────────────────────────────────────────────────────────────────
 function brEscape(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function brEscapeAttr(str) {
+  // Safe for use in onclick="..." single-quoted attribute values
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
     .replace(/"/g, '&quot;');
 }
 
@@ -1003,6 +1383,33 @@ function brInjectStyles() {
     padding: 8px 12px; line-height: 1.5; word-break: break-all;
   }
   .br-ios-preview strong { color: var(--cyan); }
+
+  /* ── History dropdown (improvement #3) ── */
+  .br-hist-btn {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 10px; cursor: pointer; font-size: 14px; flex-shrink: 0;
+    transition: border-color 0.15s;
+  }
+  .br-hist-btn:hover { border-color: var(--blue); }
+  .br-hist-dropdown {
+    position: absolute; top: calc(100% + 4px); right: 0; z-index: 100;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    min-width: 340px; max-height: 260px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .br-hist-item {
+    padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border2);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .br-hist-item:hover { background: var(--bg3); }
+  .br-hist-item code { font-family: var(--mono); font-size: 13px; color: var(--cyan); }
+  .br-hist-explain { font-size: 10px; color: var(--muted); line-height: 1.4; }
+  .br-hist-empty { padding: 12px; color: var(--muted); font-size: 12px; text-align: center; }
+  .br-hist-clear {
+    padding: 8px 12px; color: var(--red); font-size: 11px; cursor: pointer;
+    font-family: var(--mono); text-align: center;
+  }
+  .br-hist-clear:hover { background: rgba(248,113,113,0.08); }
 
   /* ── Symbol hint row ── */
   .br-symbol-row {
@@ -1100,12 +1507,14 @@ function brInjectStyles() {
     margin-top: 4px;
   }
   .br-builder-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+  /* improvement #6 — draggable token highlight */
   .br-builder-token {
     background: rgba(91,156,246,0.12); border: 1px solid rgba(91,156,246,0.3); border-radius: 5px;
     font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--blue);
-    padding: 4px 10px; cursor: pointer; transition: background 0.15s;
+    padding: 4px 10px; cursor: grab; transition: background 0.15s; user-select: none;
   }
-  .br-builder-token:hover { background: rgba(248,113,113,0.15); border-color: var(--red); color: var(--red); }
+  .br-builder-token:hover { background: rgba(248,113,113,0.15); border-color: var(--red); color: var(--red); cursor: pointer; }
+  .br-builder-token:active { cursor: grabbing; opacity: 0.6; }
   .br-builder-cursor { color: var(--blue); font-size: 18px; animation: br-blink 1s step-end infinite; }
   @keyframes br-blink { 50% { opacity: 0; } }
   .br-builder-result-grid {
@@ -1169,6 +1578,21 @@ function brInjectStyles() {
   .br-match-yes { color: var(--green); }
   .br-match-no  { color: var(--red); }
 
+  /* improvement #10 — diff summary styles */
+  .br-diff-summary {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .br-diff-over {
+    background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3);
+    color: var(--red); border-radius: 6px; padding: 6px 12px;
+    font-size: 12px; font-family: var(--mono);
+  }
+  .br-diff-under {
+    background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
+    color: var(--amber); border-radius: 6px; padding: 6px 12px;
+    font-size: 12px; font-family: var(--mono);
+  }
+
   /* ── Ref / Cheat sheet ── */
   .br-ref-table-wrap { overflow-x: auto; }
   .br-ref-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -1190,9 +1614,17 @@ function brInjectStyles() {
   .br-test-btn {
     background: rgba(91,156,246,0.1); border: 1px solid rgba(91,156,246,0.25); border-radius: 5px;
     color: var(--blue); font-family: var(--mono); font-size: 10px;
-    padding: 4px 8px; cursor: pointer; white-space: nowrap;
+    padding: 4px 8px; cursor: pointer; white-space: nowrap; margin-right: 4px;
   }
   .br-test-btn:hover { background: rgba(91,156,246,0.2); }
+  /* improvement #8 — copy button */
+  .br-copy-btn {
+    background: rgba(56,217,192,0.1); border: 1px solid rgba(56,217,192,0.25); border-radius: 5px;
+    color: var(--cyan); font-family: var(--mono); font-size: 10px;
+    padding: 4px 8px; cursor: pointer; white-space: nowrap; margin-right: 4px;
+    transition: all 0.15s;
+  }
+  .br-copy-btn:hover { background: rgba(56,217,192,0.2); }
   .br-inline-code {
     font-family: var(--mono); font-size: 12px; color: var(--cyan);
     background: rgba(56,217,192,0.08); padding: 2px 7px; border-radius: 4px;
@@ -1205,6 +1637,7 @@ function brInjectStyles() {
     .br-input-row { flex-direction: column; }
     .br-tabs { gap: 0; }
     .br-tab { font-size: 11px; padding: 7px 10px; }
+    .br-hist-dropdown { min-width: 260px; right: -40px; }
   }
   `;
   document.head.appendChild(s);
