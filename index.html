@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SubnetLab Pro — Built by Chaithanya Kumar Katari</title>
 <meta name="author" content="Chaithanya Kumar Katari">
-<meta name="description" content="SubnetLab Pro v15.0 — A complete IPv4/IPv6 subnetting & protocol toolkit with 60+ interactive simulators. Built by Chaithanya Kumar Katari, Network Implementation Manager at Akamai Technologies.">
+<meta name="description" content="SubnetLab Pro v16.0 — A complete IPv4/IPv6 subnetting & protocol toolkit with 63+ interactive simulators. Built by Chaithanya Kumar Katari, Network Implementation Manager at Akamai Technologies.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -119,6 +119,11 @@
       <span class="icon">🔀</span> BGP Path Selector
       <span class="nav-badge badge-exp">Live</span>
     </button>
+    <!-- BGP REGEX -->
+    <button class="nav-btn" onclick="gotoPage('bgp-regex',this)">
+      <span class="icon">🔤</span> BGP Regex Tool
+      <span class="nav-badge badge-exp">New</span>
+    </button>
     <button class="nav-btn" onclick="gotoPage('proto-sim',this)">
       <span class="icon">⚡</span> Protocol Simulator
       <span class="nav-badge badge-int">Live</span>
@@ -186,11 +191,7 @@
       <span class="icon">🎬</span> BGP Animations
       <span class="nav-badge badge-bgpanim">New</span>
     </button>
-    <!-- BGP REGEX -->
-    <button class="nav-btn" onclick="gotoPage('bgp-regex',this)">
-      <span class="icon">🔤</span> BGP Regex Tool
-      <span class="nav-badge badge-exp">New</span>
-    </button>
+
     <!-- BGP -->
     <button class="nav-btn" onclick="gotoPage('bgp-hijack',this)">
       <span class="icon">⚠</span> BGP Hijack Sim
@@ -1817,7 +1818,7 @@ show interfaces ge-0/0/1 detail | match filter</pre>
         <p style="font-size:13px;color:var(--muted2);line-height:1.85">
           I built <strong style="color:var(--blue)">SubnetLab Pro</strong> to give networking students, engineers, and
           CCNA/CCNP candidates a free, offline, fully-featured subnetting and protocol toolkit — no ads, no logins, no server needed.
-          Now at <strong style="color:var(--blue)">v15.0</strong> with 60+ interactive simulators spanning ARP, NAT, MTU, TLS, ICMP, TCP, DHCP Relay, and more.
+          Now at <strong style="color:var(--blue)">v16.0</strong> with 63+ interactive simulators spanning ARP, NAT, MTU, TLS, ICMP, TCP, DHCP Relay, Password Generator, Interview Prep, BGP Regex, and more.
           Everything I wish I had when I was learning networking myself.
         </p>
       </div>
@@ -2006,7 +2007,7 @@ show interfaces ge-0/0/1 detail | match filter</pre>
   <div class="card" style="margin-top:14px;background:linear-gradient(135deg,rgba(91,156,246,0.07),rgba(56,217,192,0.05));border-color:var(--border2)">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">🧰 About SubnetLab Pro</div>
-      <span style="font-family:var(--mono);font-size:9px;padding:2px 9px;border-radius:20px;background:rgba(91,156,246,0.15);color:var(--blue);border:1px solid rgba(91,156,246,0.3)">v15.0</span>
+      <span style="font-family:var(--mono);font-size:9px;padding:2px 9px;border-radius:20px;background:rgba(91,156,246,0.15);color:var(--blue);border:1px solid rgba(91,156,246,0.3)">v16.0</span>
       <span style="font-family:var(--mono);font-size:9px;padding:2px 9px;border-radius:20px;background:rgba(74,222,128,0.1);color:var(--green);border:1px solid rgba(74,222,128,0.25)">100% Offline</span>
     </div>
     <p style="font-size:13px;color:var(--muted2);line-height:1.85;margin-bottom:12px">
@@ -2050,20 +2051,18 @@ show interfaces ge-0/0/1 detail | match filter</pre>
         </div>
       </div>
       <div style="background:var(--bg3);border-radius:10px;padding:12px">
-        <div style="font-size:10px;color:var(--amber);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🔬 New in v15.0</div>
-        <div style="font-size:11px;color:var(--muted2);line-height:1.9">
-          ARP Simulator (Basic, GARP, Spoofing, Proxy)<br>
-          NAT / PAT Simulator (Static, Dynamic, PAT)<br>
-          MTU / Fragmentation &amp; PMTUD Black Hole<br>
-          TLS 1.3 / 1.2 / mTLS / Session Resumption<br>
-          ACL v2 — Rule Editor &amp; Packet Builder<br>
-          DHCP Relay Agent · GRE Tunnel MTU Overhead
+        <div style="background:var(--bg3);border-radius:10px;padding:12px">
+          <div style="font-size:10px;color:var(--amber);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🔬 New in v16.0</div>
+          <div style="font-size:11px;color:var(--muted2);line-height:1.9">
+            🔐 Password Generator (Network-grade passwords)<br>
+            🎯 Interview Prep (CCNA/CCNP/CCIE Q&amp;A)<br>
+            🔀 BGP Regex Tester (Community &amp; AS-path regex)
+          </div>
         </div>
-      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px">
       <div style="background:var(--bg4);border-radius:8px;padding:10px;text-align:center">
-        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--blue)">60+</div>
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--blue)">63+</div>
         <div style="font-size:10px;color:var(--muted2)">Interactive Tools</div>
       </div>
       <div style="background:var(--bg4);border-radius:8px;padding:10px;text-align:center">
@@ -2086,7 +2085,11 @@ show interfaces ge-0/0/1 detail | match filter</pre>
     <div style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px">📋 Version History</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:rgba(91,156,246,0.07);border:1px solid rgba(91,156,246,0.2)">
-        <span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(91,156,246,0.2);color:var(--blue);white-space:nowrap;flex-shrink:0">v15.0</span>
+        <span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(91,156,246,0.2);color:var(--blue);white-space:nowrap;flex-shrink:0">v16.0</span>
+        <div style="font-size:11px;color:var(--muted2)"><strong style="color:var(--text)">Utility &amp; Career Tools Drop</strong> — 🔐 Password Generator (network-grade passwords with strength meter &amp; copy) · 🎯 Interview Prep (CCNA/CCNP/CCIE Q&amp;A with difficulty filter) · 🔀 BGP Regex Tester (AS-path &amp; community regex live tester)</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--bg3)">
+        <span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;background:var(--bg4);color:var(--muted2);white-space:nowrap;flex-shrink:0">v15.0</span>
         <div style="font-size:11px;color:var(--muted2)"><strong style="color:var(--text)">Protocol Labs Mega-Drop</strong> — ARP Simulator (Basic, GARP, ARP Spoofing, Proxy ARP) · NAT/PAT Simulator (Static NAT, Dynamic NAT, PAT/Overload with live translation table) · MTU/Fragmentation Deep Dive (IP Fragmentation, PMTUD, PMTUD Black Hole, GRE Tunnel overhead) · TLS Handshake Animator (TLS 1.3, TLS 1.2, Session Resumption, Certificate Validation, mTLS, Alerts) · ICMP/Traceroute Simulator (Ping, Traceroute TTL walk, PMTUD) · TCP Segment Deep Dive (6 scenarios: Handshake, Data Transfer, Congestion, Teardown, Retransmit, RST) · DHCP Relay Agent (Basic, Option 82, Multi-server, Renewal, Decline/NAK) · ACL Simulator v2 Enhanced (Custom Packet Builder, Rule Editor, Hit Counter Dashboard, Quiz Mode, Packet Log)</div>
       </div>
       <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--bg3)">
@@ -2127,9 +2130,10 @@ show interfaces ge-0/0/1 detail | match filter</pre>
       </div>
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--cyan)">SubnetLab Pro v15.0</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--cyan)">SubnetLab Pro v16.0</div>
       <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">100% offline · No ads · Free forever</div>
     </div>
+  </div>
   </div>
 
 </div>
@@ -10663,13 +10667,13 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <div id="page-mtu"        class="page"></div>
 <div id="page-acl-sim"    class="page"></div>
 
-
 <div id="page-eigrp"      class="page"></div>
 <div id="page-qos"        class="page"></div>
 <div id="page-icmp"       class="page"></div>
 <div id="page-password" class="page"></div>
 <div id="page-interview" class="page"></div>
 <div id="page-bgp-regex" class="page"></div>
+
 </div><!-- /content -->
 </div><!-- /app -->
 </main><!-- /content -->
@@ -10699,8 +10703,8 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <script src="Project/js/qos.js"></script>
 <script src="Project/js/icmp.js"></script>
 <script src="Project/js/password.js"></script>
-<script src="Project/js/interview.js"></script> 
-<script src="Project/js/bgp-regex.js"></script>
+<script src="Project/js/interview.js"></script>
+<script src="Project/js/bgp-regex.js"></script>  
 </body>
 </html>
 
