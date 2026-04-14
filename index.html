@@ -137,7 +137,19 @@
       <span class="nav-badge badge-int">Lab</span>
     </button>
   </div>
-
+  
+  <div class="nav-section">
+    <div class="nav-label">Network Utilities</div>
+    <button class="nav-btn" onclick="gotoPage('mac',this)">
+      <span class="icon">🔢</span> MAC Converter
+      <span class="nav-badge" style="background:rgba(56,217,192,0.12);color:var(--cyan)">New</span>
+    </button>
+    <button class="nav-btn" onclick="gotoPage('vpn',this)">
+      <span class="icon">🔑</span> WireGuard Keys
+      <span class="nav-badge" style="background:rgba(56,217,192,0.12);color:var(--cyan)">New</span>
+    </button>
+  </div>
+  
   <div class="nav-section">
     <div class="nav-label">Live Simulators</div>
   
@@ -10670,6 +10682,8 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <div id="page-eigrp"      class="page"></div>
 <div id="page-qos"        class="page"></div>
 <div id="page-icmp"       class="page"></div>
+<div id="page-mac" class="page"></div>
+<div id="page-vpn" class="page"></div>
 <div id="page-password" class="page"></div>
 <div id="page-interview" class="page"></div>
 <div id="page-bgp-regex" class="page"></div>
@@ -10705,6 +10719,8 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <script src="Project/js/password.js"></script>
 <script src="Project/js/interview.js"></script>
 <script src="Project/js/bgp-regex.js"></script>  
+<script src="Project/js/mac.js"></script>
+<script src="Project/js/vpn.js"></script>
 </body>
 </html>
 
