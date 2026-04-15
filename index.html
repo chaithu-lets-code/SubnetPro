@@ -148,6 +148,22 @@
       <span class="icon">🔑</span> WireGuard Keys
       <span class="nav-badge" style="background:rgba(56,217,192,0.12);color:var(--cyan)">New</span>
     </button>
+    <button class="nav-btn" onclick="gotoPage('ping',this)">
+      <span class="icon">📡</span> Ping & Latency
+      <span class="nav-badge" style="background:rgba(56,217,192,0.12);color:var(--cyan)">New</span>
+    </button>
+    <button class="nav-btn" onclick="gotoPage('route-summary',this)">
+      <span class="icon">🔁</span> Route Summarization
+      <span class="nav-badge" style="background:rgba(56,217,192,0.12);color:var(--cyan)">New</span>
+    </button>
+    <button class="nav-btn" onclick="gotoPage('bgp-asn',this)">
+      <span class="icon">🔍</span> BGP ASN Lookup
+      <span class="nav-badge" style="background:rgba(56,217,192,0.12);color:var(--cyan)">New</span>
+    </button>
+    <button class="nav-btn" onclick="gotoPage('ports',this)">
+      <span class="icon">🔌</span> Port Reference
+      <span class="nav-badge" style="background:rgba(56,217,192,0.12);color:var(--cyan)">New</span>
+    </button>
   </div>
   
   <div class="nav-section">
@@ -10687,6 +10703,10 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <div id="page-password" class="page"></div>
 <div id="page-interview" class="page"></div>
 <div id="page-bgp-regex" class="page"></div>
+<div id="page-ping"          class="page"></div>
+<div id="page-route-summary" class="page"></div>
+<div id="page-bgp-asn"       class="page"></div>
+<div id="page-ports"         class="page"></div>
 
 </div><!-- /content -->
 </div><!-- /app -->
@@ -10721,6 +10741,10 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <script src="Project/js/bgp-regex.js"></script>  
 <script src="Project/js/mac.js"></script>
 <script src="Project/js/vpn.js"></script>
+<script src="Project/js/ping.js"></script>
+<script src="Project/js/route-summary.js"></script>
+<script src="Project/js/bgp-asn.js"></script>
+<script src="Project/js/ports.js"></script>
 </body>
 </html>
 
