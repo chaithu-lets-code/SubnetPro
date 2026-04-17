@@ -1,47 +1,64 @@
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    
-    :root {
-      --bg:       #07090f;
-      --bg1:      #0c0f1a;
-      --bg2:      #111520;
-      --bg3:      #181d2e;
-      --bg4:      #1e2438;
-      --border:   rgba(100,160,255,0.12);
-      --border2:  rgba(100,160,255,0.25);
-      --border3:  rgba(100,160,255,0.4);
-      --blue:     #5b9cf6;
-      --cyan:     #38d9c0;
-      --green:    #4ade80;
-      --amber:    #fbbf24;
-      --pink:     #f472b6;
-      --red:      #f87171;
-      --purple:   #a78bfa;
-      --text:     #e8eaf0;
-      --muted:    #5a6080;
-      --muted2:   #8892b0;
-      --mono:     'IBM Plex Mono', monospace;
-      --sans:     'DM Sans', sans-serif;
-      --r:        10px;
-      --r2:       14px;
-    }
-    
-    html { font-size: 16px; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--sans);
-      height: 100vh;
-      overflow: hidden;
-      width: 100%;
-    }
-    html, body { max-width: 100%; overflow: hidden; }
-    
-    /* Subtle grid */
-    body::after {
-      content:'';
-      position:fixed; inset:0; z-index:0; pointer-events:none;
-      background:
-        linear-gradient(rgba(91,156,246,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(91,156,246,0.03) 1px, transparent 1px);
-      background-size: 48px 48px;
-    }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #07090f;
+  --bg1: #0c0f1a;
+  --bg2: #111520;
+  --bg3: #181d2e;
+  --bg4: #1e2438;
+  --border: rgba(100, 160, 255, 0.12);
+  --border2: rgba(100, 160, 255, 0.25);
+  --border3: rgba(100, 160, 255, 0.4);
+  --blue: #5b9cf6;
+  --cyan: #38d9c0;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --pink: #f472b6;
+  --red: #f87171;
+  --purple: #a78bfa;
+  --text: #e8eaf0;
+  --muted: #5a6080;
+  --muted2: #8892b0;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+  --r: 10px;
+  --r2: 14px;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  height: 100vh;
+  overflow: hidden;
+  width: 100%;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Subtle grid */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(91, 156, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 156, 246, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
