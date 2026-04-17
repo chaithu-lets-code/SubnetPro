@@ -21,9 +21,10 @@
     peerCounter: 0,
     cfg: {
       mode: 'server',
-      address: '10.0.0.1/24',
-      listenPort: '51820',
-      dns: '1.1.1.1',
+      includeGeneratedKeys: false,
+      address: '',
+      listenPort: '',
+      dns: '',
       mtu: '',
       peers: []
     }
@@ -296,6 +297,7 @@
     S.privFp = ''; S.pubFp = '';
     S.privVisible = false;
     S.generatedAt = null;
+    S.cfg.includeGeneratedKeys = false;
     const keysOut = document.getElementById('vpn-keys-out');
     if (keysOut) keysOut.innerHTML = `<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;font-family:var(--mono);">Keys wiped. Generate a new pair above.</div>`;
     const pd = document.getElementById('vpn-psk-display');
@@ -341,6 +343,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="vpnSwitchTab('tools');setTimeout(()=>vpnShowQR('pub'),80);" style="background:var(--bg3);border:1px solid var(--border);color:var(--cyan);padding:7px 13px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">📱 QR: Public Key</button>
           <button onclick="vpnSwitchTab('config');setTimeout(()=>{vpnRenderPeers();vpnUpdateConfigPreview();},80);" style="background:var(--bg3);border:1px solid var(--border);color:var(--green);padding:7px 13px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">⚙️ Config Builder</button>
+          <button onclick="vpnUseGeneratedInConfig()" style="background:var(--bg3);border:1px solid var(--cyan);color:var(--cyan);padding:7px 13px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">↪ Use Keys In Builder</button>
           <button onclick="vpnWipeKeys()" style="background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.4);color:var(--red,#f87171);padding:7px 13px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">🗑 Wipe Keys</button>
         </div>
       </div>`;
@@ -364,7 +367,10 @@
   };
   window.vpnCopyConfig = function () {
     const el = document.getElementById('vpn-config-pre');
-    if (el) navigator.clipboard.writeText(el.textContent).then(() => flashBtn('vpn-config-copy-btn', '✓ Copied!'));
+    if (!el) return;
+    const raw = ('value' in el) ? el.value : el.textContent;
+    const text = sanitizeWgConfig(raw, { stripComments: true });
+    navigator.clipboard.writeText(text || '').then(() => flashBtn('vpn-config-copy-btn', '✓ Copied!'));
   };
 
   function vpnShowError(msg) {
@@ -411,49 +417,292 @@
   // ──────────────────────────────────────────────────────────────
   // CONFIG BUILDER
   // ──────────────────────────────────────────────────────────────
+  function parseKeyValue(line) {
+    const idx = line.indexOf('=');
+    if (idx === -1) return null;
+    return {
+      key: line.slice(0, idx).trim(),
+      value: line.slice(idx + 1).trim()
+    };
+  }
+
+  function parseConfigTextToState(text) {
+    const lines = normalizeWgText(text).split('\n');
+    let section = '';
+    const iface = {};
+    const peers = [];
+    let curPeer = null;
+    let nextPeerId = 0;
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+
+      const sec = line.match(/^\[(.+)\]$/);
+      if (sec) {
+        section = sec[1].trim();
+        if (/^peer$/i.test(section)) {
+          curPeer = { id: ++nextPeerId, name: '', pubkey: '', allowedips: '', endpoint: '', psk: '', keepalive: '' };
+          peers.push(curPeer);
+        } else {
+          curPeer = null;
+        }
+        continue;
+      }
+
+      const kv = parseKeyValue(line);
+      if (!kv) continue;
+
+      if (/^interface$/i.test(section)) {
+        iface[kv.key.toLowerCase()] = kv.value;
+      } else if (/^peer$/i.test(section) && curPeer) {
+        const k = kv.key.toLowerCase();
+        if (k === 'publickey') curPeer.pubkey = kv.value;
+        else if (k === 'allowedips') curPeer.allowedips = kv.value;
+        else if (k === 'endpoint') curPeer.endpoint = kv.value;
+        else if (k === 'presharedkey') curPeer.psk = kv.value;
+        else if (k === 'persistentkeepalive') curPeer.keepalive = kv.value;
+      }
+    }
+
+    if (iface.privatekey) {
+      S.priv = iface.privatekey;
+      S.cfg.includeGeneratedKeys = true;
+    }
+    if (iface.address) S.cfg.address = iface.address;
+    if (iface.listenport) S.cfg.listenPort = iface.listenport;
+    if (iface.dns) S.cfg.dns = iface.dns;
+    if (iface.mtu) S.cfg.mtu = iface.mtu;
+
+    let inferredMode = 'server';
+    const anyEndpoint = peers.some(p => !!(p.endpoint || '').trim());
+    const anyFullTunnel = peers.some(p => /0\.0\.0\.0\/0|::\/0/.test(p.allowedips || ''));
+    if (anyEndpoint || anyFullTunnel) inferredMode = 'client';
+    S.cfg.mode = inferredMode;
+
+    S.cfg.peers = peers;
+    S.peerCounter = nextPeerId;
+
+    if (S.priv) {
+      const b = base64ToBytes(S.priv);
+      if (b && b.length === 32) {
+        try {
+          S.pub = bytesToBase64(curve25519(b));
+          sha256Fp(S.priv).then(fp => { S.privFp = fp; vpnRenderKeys(); });
+          sha256Fp(S.pub).then(fp => { S.pubFp = fp; vpnRenderKeys(); });
+        } catch {}
+      }
+    }
+  }
+
+  function pushSection(lines, name) {
+    if (lines.length && lines[lines.length - 1] !== '') lines.push('');
+    lines.push('[' + name + ']');
+  }
+
   function buildConfigText() {
-    if (!S.priv) return '# Generate or derive a key pair first on the ⚡ Generate tab.';
     const c = S.cfg;
     const lines = [];
-    lines.push('[Interface]');
-    lines.push('PrivateKey = ' + S.priv);
-    lines.push('Address    = ' + (c.address || '10.0.0.1/24'));
-    if (c.mode === 'server' && c.listenPort) lines.push('ListenPort = ' + c.listenPort);
-    if (c.dns)  lines.push('DNS        = ' + c.dns);
-    if (c.mtu)  lines.push('MTU        = ' + c.mtu);
+    pushSection(lines, 'Interface');
+    lines.push('ListenPort = ' + (c.listenPort || ''));
+    lines.push('PrivateKey = ' + ((c.includeGeneratedKeys && S.priv) ? S.priv : '<paste-private-key>'));
+    lines.push('Address = ' + (c.address || ''));
+    lines.push('DNS = ' + (c.dns || ''));
+    if (c.mtu) lines.push('MTU = ' + c.mtu);
+
     if (!c.peers.length) {
-      lines.push('');
-      lines.push('# Add a [Peer] block for each remote peer:');
-      lines.push('[Peer]');
-      lines.push('PublicKey           = <paste-peer-public-key>');
-      if (c.mode === 'client') {
-        lines.push('AllowedIPs          = 0.0.0.0/0, ::/0');
-        lines.push('Endpoint            = vpn.example.com:51820');
-        lines.push('PersistentKeepalive = 25');
-      } else {
-        lines.push('AllowedIPs          = 10.0.0.2/32');
-      }
+      pushSection(lines, 'Peer');
+      lines.push('PublicKey = ');
+      lines.push('AllowedIPs = ');
+      lines.push('Endpoint = ');
     } else {
-      c.peers.forEach((p, i) => {
-        lines.push('');
-        lines.push('# Peer ' + (i + 1) + (p.name ? ': ' + p.name : ''));
-        lines.push('[Peer]');
-        lines.push('PublicKey           = ' + (p.pubkey || '<paste-peer-public-key>'));
-        if (p.psk) lines.push('PresharedKey        = ' + p.psk);
-        lines.push('AllowedIPs          = ' + (p.allowedips || (c.mode === 'client' ? '0.0.0.0/0, ::/0' : '10.0.0.' + (i + 2) + '/32')));
-        if (p.endpoint)  lines.push('Endpoint            = ' + p.endpoint);
+      c.peers.forEach((p) => {
+        pushSection(lines, 'Peer');
+        lines.push('PublicKey = ' + (p.pubkey || ''));
+        lines.push('AllowedIPs = ' + (p.allowedips || ''));
+        lines.push('Endpoint = ' + (p.endpoint || ''));
         if (p.keepalive) lines.push('PersistentKeepalive = ' + p.keepalive);
+        if (p.psk) lines.push('PresharedKey = ' + p.psk);
       });
     }
     return lines.join('\n');
   }
 
-  function vpnUpdateConfigPreview() {
-    const el = document.getElementById('vpn-config-pre');
-    if (el) el.textContent = buildConfigText();
+  function sanitizeWgConfig(text, opts) {
+    const stripComments = !!(opts && opts.stripComments);
+    const lines = normalizeWgText(text).split('\n');
+    const out = [];
+    let inAllowedSection = false;
+
+    function toCanonicalSection(name) {
+      const value = String(name || '').trim().toLowerCase();
+      if (value === 'interface') return 'Interface';
+      if (value === 'peer') return 'Peer';
+      return '';
+    }
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+
+      if (!line) {
+        if (out.length && out[out.length - 1] !== '') out.push('');
+        continue;
+      }
+
+      if (line.startsWith('#') || line.startsWith(';')) {
+        if (!stripComments && inAllowedSection) out.push(line);
+        continue;
+      }
+
+      const sectionMatch = line.match(/^\[(.+)\]$/);
+      if (sectionMatch) {
+        const section = toCanonicalSection(sectionMatch[1]);
+        if (!section) {
+          inAllowedSection = false;
+          continue;
+        }
+        pushSection(out, section);
+        inAllowedSection = true;
+        continue;
+      }
+
+      if (!inAllowedSection) continue;
+      const kv = parseKeyValue(line);
+      if (!kv || !kv.key) continue;
+      out.push(kv.key + ' = ' + kv.value);
+    }
+
+    while (out.length && out[0] === '') out.shift();
+    while (out.length && out[out.length - 1] === '') out.pop();
+    return out.join('\n');
   }
 
-  window.vpnSetConfigMode = function (mode) {
+  function normalizeWgText(text) {
+    const value = String(text || '');
+    const normalized = typeof value.normalize === 'function' ? value.normalize('NFKC') : value;
+    return normalized
+      .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '')
+      .replace(/\u00A0/g, ' ')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+  }
+
+  function configPreviewPlaceholderText() {
+    return [
+      'Paste Wireguard config or generate the key pairr first...',
+      '',
+      '[Interface]',
+      'ListenPort =',
+      'PrivateKey =',
+      'Address =',
+      'DNS =',
+      '',
+      '[Peer]',
+      'PublicKey =',
+      'AllowedIPs =',
+      'Endpoint ='
+    ].join('\n');
+  }
+
+  function hasConfigFormData() {
+    const c = S.cfg;
+    if ((c.listenPort || '').trim()) return true;
+    if ((c.address || '').trim()) return true;
+    if ((c.dns || '').trim()) return true;
+    if ((c.mtu || '').trim()) return true;
+    if ((c.peers || []).length) return true;
+    return false;
+  }
+
+  function vpnUpdateConfigPreview() {
+    const el = document.getElementById('vpn-config-pre');
+    if (!el) return;
+    el.placeholder = configPreviewPlaceholderText();
+    el.value = hasConfigFormData() ? buildConfigText() : '';
+    
+    // Auto-update config QR if it is currently displayed
+    const qrContainer = document.getElementById('vpn-config-qr-container');
+    if (qrContainer && qrContainer.innerHTML.includes('<canvas')) {
+      if (typeof window.vpnShowConfigQR === 'function') window.vpnShowConfigQR();
+    }
+  }
+
+  function vpnApplyInterfaceInputsFromState() {
+    const setFirstInputByOninputContains = (needle, value) => {
+      const inp = document.querySelector(`input[oninput*="${needle}"]`);
+      if (inp && typeof value !== 'undefined') inp.value = value || '';
+    };
+    setFirstInputByOninputContains("vpnCfgField('address'", S.cfg.address);
+    setFirstInputByOninputContains("vpnCfgField('listenPort'", S.cfg.listenPort);
+    setFirstInputByOninputContains("vpnCfgField('dns'", S.cfg.dns);
+    setFirstInputByOninputContains("vpnCfgField('mtu'", S.cfg.mtu);
+  }
+
+  window.vpnConfigPreviewInput = function () {
+    const el = document.getElementById('vpn-config-pre');
+    if (!el) return;
+    const sanitized = sanitizeWgConfig(el.value || '', { stripComments: true });
+    if ((el.value || '') !== sanitized) el.value = sanitized;
+    parseConfigTextToState(sanitized);
+    vpnApplyInterfaceInputsFromState();
+    vpnSetConfigMode(S.cfg.mode, { skipPreviewSync: true });
+    vpnRenderPeers();
+    
+    // Auto-update config QR if it is currently displayed
+    const qrContainer = document.getElementById('vpn-config-qr-container');
+    if (qrContainer && qrContainer.innerHTML.includes('<canvas')) {
+      if (typeof window.vpnShowConfigQR === 'function') window.vpnShowConfigQR();
+    }
+  };
+
+  window.vpnConfigPlainPaste = function (event) {
+    if (!event || !event.clipboardData || !event.clipboardData.getData) return;
+    const target = event.target || document.getElementById('vpn-config-pre');
+    if (!target) return;
+
+    event.preventDefault();
+
+    let plain = event.clipboardData.getData('text/plain') || '';
+    if (!plain) {
+      const html = event.clipboardData.getData('text/html') || '';
+      if (html) {
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        plain = div.innerText || div.textContent || '';
+      } else {
+        plain = event.clipboardData.getData('text') || '';
+      }
+    }
+    const cleaned = normalizeWgText(plain);
+
+    const start = typeof target.selectionStart === 'number' ? target.selectionStart : target.value.length;
+    const end = typeof target.selectionEnd === 'number' ? target.selectionEnd : target.value.length;
+    const before = target.value.slice(0, start);
+    const after = target.value.slice(end);
+    target.value = before + cleaned + after;
+
+    const caret = start + cleaned.length;
+    if (typeof target.setSelectionRange === 'function') {
+      target.setSelectionRange(caret, caret);
+    }
+
+    vpnConfigPreviewInput();
+  };
+
+  window.vpnApplyPreviewToFields = function () {
+    const el = document.getElementById('vpn-config-pre');
+    if (!el) return;
+    const sanitized = sanitizeWgConfig(el.value || '', { stripComments: true });
+    if ((el.value || '') !== sanitized) el.value = sanitized;
+    parseConfigTextToState(sanitized);
+    vpnApplyInterfaceInputsFromState();
+    vpnSetConfigMode(S.cfg.mode, { skipPreviewSync: true });
+    vpnRenderPeers();
+    flashBtn('vpn-apply-preview-btn', '✓ Applied!', 'var(--green)');
+  };
+
+  window.vpnSetConfigMode = function (mode, opts) {
+    const skipPreviewSync = !!(opts && opts.skipPreviewSync);
     S.cfg.mode = mode;
     document.querySelectorAll('.vpn-mode-btn').forEach(b => {
       const active = b.dataset.mode === mode;
@@ -461,7 +710,7 @@
       b.style.color        = active ? '#000' : 'var(--muted2)';
       b.style.borderColor  = active ? 'var(--green)' : 'var(--border)';
     });
-    vpnUpdateConfigPreview();
+    if (!skipPreviewSync) vpnUpdateConfigPreview();
   };
 
   window.vpnCfgField = function (field, value) {
@@ -498,6 +747,54 @@
     vpnUpdateConfigPreview();
   };
 
+  window.vpnUseGeneratedInConfig = function () {
+    if (!S.priv || !S.pub) {
+      alert('Generate or derive a key pair first.');
+      return;
+    }
+
+    S.cfg.includeGeneratedKeys = true;
+
+    if (!S.cfg.peers.length) {
+      S.peerCounter++;
+      S.cfg.peers.push({
+        id: S.peerCounter,
+        name: '',
+        pubkey: S.pub,
+        allowedips: '',
+        endpoint: '',
+        psk: '',
+        keepalive: ''
+      });
+    } else {
+      const firstPeer = S.cfg.peers[0];
+      if (firstPeer && !String(firstPeer.pubkey || '').trim()) firstPeer.pubkey = S.pub;
+    }
+
+    vpnSwitchTab('config');
+    vpnRenderPeers();
+    vpnUpdateConfigPreview();
+    flashBtn('vpn-gen-btn', '✓ Added To Builder', 'var(--green)');
+  };
+
+  window.vpnClearConfigBuilder = function () {
+    if (!confirm('Wipe all Interface and Peer config fields?')) return;
+    S.cfg.includeGeneratedKeys = false;
+    S.cfg.address = '';
+    S.cfg.listenPort = '';
+    S.cfg.dns = '';
+    S.cfg.mtu = '';
+    S.cfg.peers = [];
+    S.peerCounter = 0;
+    vpnApplyInterfaceInputsFromState();
+    vpnRenderPeers();
+    vpnUpdateConfigPreview();
+    
+    // Clear the QR code as well
+    const qrContainer = document.getElementById('vpn-config-qr-container');
+    if (qrContainer) qrContainer.innerHTML = '';
+  };
+
   function cfgInput(id, label, value, oninput, placeholder) {
     return `<div>
       <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;">${label}</div>
@@ -520,10 +817,10 @@
           <button onclick="vpnRemovePeer(${p.id})" style="background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.4);color:var(--red,#f87171);padding:3px 10px;border-radius:6px;font-size:10px;font-family:var(--mono);cursor:pointer;">✕ Remove</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-          ${cfgInput('vpn-peer-pk-' + p.id,  'Public Key',  p.pubkey,    'vpnPeerField(' + p.id + ',"pubkey",this.value)',    'wg pubkey output (44 chars base64)')}
-          ${cfgInput('vpn-peer-ep-' + p.id,  'Endpoint',    p.endpoint,  'vpnPeerField(' + p.id + ',"endpoint",this.value)',  'vpn.example.com:51820')}
-          ${cfgInput('vpn-peer-ai-' + p.id,  'AllowedIPs',  p.allowedips,'vpnPeerField(' + p.id + ',"allowedips",this.value)','0.0.0.0/0, ::/0  or  10.0.0.2/32')}
-          ${cfgInput('vpn-peer-ka-' + p.id,  'Keepalive',   p.keepalive, 'vpnPeerField(' + p.id + ',"keepalive",this.value)', '25  (seconds)')}
+          ${cfgInput('vpn-peer-pk-' + p.id,  'Public Key',  p.pubkey,    'vpnPeerField(' + p.id + ',\'pubkey\',this.value)',    'wg pubkey output (44 chars base64)')}
+          ${cfgInput('vpn-peer-ep-' + p.id,  'Endpoint',    p.endpoint,  'vpnPeerField(' + p.id + ',\'endpoint\',this.value)',  'vpn.example.com:51820')}
+          ${cfgInput('vpn-peer-ai-' + p.id,  'AllowedIPs',  p.allowedips,'vpnPeerField(' + p.id + ',\'allowedips\',this.value)','0.0.0.0/0, ::/0  or  10.0.0.2/32')}
+          ${cfgInput('vpn-peer-ka-' + p.id,  'Keepalive',   p.keepalive, 'vpnPeerField(' + p.id + ',\'keepalive\',this.value)', '25  (seconds)')}
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <input id="vpn-peer-psk-${p.id}" type="text" value="${p.psk || ''}" placeholder="PresharedKey (optional — 32-byte base64)"
@@ -536,14 +833,309 @@
   }
 
   window.vpnDownloadConfig = function () {
-    const text = buildConfigText();
+    const pre = document.getElementById('vpn-config-pre');
+    const raw = pre ? (('value' in pre) ? pre.value : pre.textContent) : buildConfigText();
+    const text = sanitizeWgConfig(raw, { stripComments: true });
     if (!S.priv) { alert('Generate or derive a key pair first.'); return; }
+
+    const nameInput = prompt('Enter config filename:', 'wg0.conf');
+    if (nameInput === null) return;
+
+    let filename = (nameInput || '').trim() || 'wg0.conf';
+    if (!/\.conf$/i.test(filename)) filename += '.conf';
+
     const blob = new Blob([text], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = 'wg0.conf'; a.click();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
     URL.revokeObjectURL(url);
     flashBtn('vpn-download-cfg-btn', '✓ Downloaded!', 'var(--green)');
+  };
+
+  window.vpnShowConfigQR = function () {
+    const pre = document.getElementById('vpn-config-pre');
+    const raw = pre ? (('value' in pre) ? pre.value : pre.textContent) : '';
+    const data = sanitizeWgConfig(raw, { stripComments: true });
+    const container = document.getElementById('vpn-config-qr-container');
+    if (!container) return;
+
+    if (!data || !data.trim()) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    container.innerHTML = '';
+
+    function compactConfigText(text) {
+      const src = sanitizeWgConfig(text, { stripComments: true }).split('\n');
+      const compact = [];
+
+      for (const line of src) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          if (compact.length && compact[compact.length - 1] !== '') compact.push('');
+          continue;
+        }
+        if (/^\[.+\]$/.test(trimmed)) {
+          if (compact.length && compact[compact.length - 1] !== '') compact.push('');
+          compact.push(trimmed);
+          continue;
+        }
+
+        const kv = parseKeyValue(trimmed);
+        if (!kv) continue;
+
+        let value = String(kv.value || '').trim();
+        if (!value) continue;
+        if (/^(allowedips|dns)$/i.test(kv.key)) {
+          value = value.split(',').map(part => part.trim()).filter(Boolean).join(',');
+        }
+
+        compact.push(kv.key + '=' + value);
+      }
+
+      while (compact.length && compact[0] === '') compact.shift();
+      while (compact.length && compact[compact.length - 1] === '') compact.pop();
+      return compact.join('\n');
+    }
+
+    function render() {
+      let usedMode = 'FULL';
+      const compact = compactConfigText(data);
+      const tryRender = (text, level) => {
+        container.innerHTML = '';
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.gap = '20px';
+        wrapper.style.alignItems = 'flex-start';
+        wrapper.style.justifyContent = 'center';
+        wrapper.style.flexWrap = 'wrap';
+        wrapper.style.width = '100%';
+        container.appendChild(wrapper);
+
+        const renderSize = text.length > 700 ? 1024 : 560;
+        
+        function createBox(isDimmed, labelText, subText) {
+          const col = document.createElement('div');
+          col.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:8px; max-width:280px; text-align:center;';
+          
+          const textWrap = document.createElement('div');
+          textWrap.style.cssText = 'display:flex; flex-direction:column; align-items:center; height:32px; justify-content:flex-end; margin-bottom:4px;';
+          
+          const label = document.createElement('div');
+          label.style.cssText = 'font-family:var(--mono);font-size:12px;color:var(--text);font-weight:bold;';
+          label.textContent = labelText;
+          textWrap.appendChild(label);
+          
+          if (subText) {
+            const subL = document.createElement('div');
+            subL.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.2;margin-top:2px;';
+            subL.textContent = subText;
+            textWrap.appendChild(subL);
+          }
+
+          const qrBox = document.createElement('div');
+          qrBox.style.cssText = 'background: #ffffff; padding: 12px; border-radius: 8px; display: inline-block;';
+          if (isDimmed) {
+             qrBox.style.filter = 'brightness(0.3)';
+          }
+
+          col.appendChild(textWrap);
+          col.appendChild(qrBox);
+          return { col, qrBox };
+        }
+
+        const boxNormal = createBox(false, 'Standard Brightness', '(Identical config, choose whichever scans better)');
+        const boxDimmed = createBox(true, 'Anti-Glare / Dimmed', '(Identical config, choose whichever scans better)');
+
+        const cfg = {
+          typeNumber: 0,
+          text,
+          width: renderSize,
+          height: renderSize,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: level
+        };
+
+        new QRCode(boxNormal.qrBox, cfg);
+        new QRCode(boxDimmed.qrBox, cfg);
+        
+        wrapper.appendChild(boxNormal.col);
+        wrapper.appendChild(boxDimmed.col);
+
+        const applyStyle = (b) => {
+          const canvas = b.querySelector('canvas');
+          const img = b.querySelector('img');
+          // Responsive max-width 280px so they can actually fit side-by-side on most screens
+          const cssScale = 'max-width: 100%; width: 280px; height: auto; image-rendering: pixelated;';
+          if (canvas) canvas.style.cssText = cssScale;
+          if (img) img.style.cssText = cssScale;
+        };
+
+        applyStyle(boxNormal.qrBox);
+        applyStyle(boxDimmed.qrBox);
+      };
+
+      // If the payload is huge, prioritize COMPACT with L-level correction 
+      // preventing the QR grid from becoming a microscopic un-scannable blur.
+      const useCompactFirst = data.length > 700;
+      const candidates = useCompactFirst ? [
+        { text: compact || data, level: QRCode.CorrectLevel.L, mode: 'COMPACT' },
+        { text: compact || data, level: QRCode.CorrectLevel.M, mode: 'COMPACT' },
+        { text: data, level: QRCode.CorrectLevel.L, mode: 'FULL' }
+      ] : [
+        { text: data, level: QRCode.CorrectLevel.M, mode: 'FULL' },
+        { text: data, level: QRCode.CorrectLevel.L, mode: 'FULL' },
+        { text: compact || data, level: QRCode.CorrectLevel.M, mode: 'COMPACT' }
+      ];
+
+      let rendered = false;
+      for (const candidate of candidates) {
+        if (!candidate.text || !candidate.text.trim()) continue;
+        try {
+          tryRender(candidate.text, candidate.level);
+          usedMode = candidate.mode;
+          rendered = true;
+          break;
+        } catch (e) {}
+      }
+      if (!rendered) {
+        container.innerHTML = `<div style="color:var(--muted);font-size:11px;font-family:var(--mono);padding:8px;max-width:560px;">QR payload too large to render reliably. Try reducing AllowedIPs entries or use file import.</div>`;
+        return;
+      }
+
+      try {
+        container.style.background = 'var(--bg3)';
+        container.style.padding = '16px';
+        container.style.border = '1px solid var(--border)';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.alignItems = 'center';
+        
+        // Warn clearly if we still have an immense QR rendering
+        if ((compact || data).length > 900) {
+          const warn = document.createElement('div');
+          warn.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--amber);background:rgba(251, 191, 36, 0.08);border:1px solid rgba(251, 191, 36, 0.4);padding:10px;border-radius:7px;margin-bottom:12px;line-height:1.6;text-align:left;';
+          warn.innerHTML = '<b>⚠ Extreme Density Detected</b><br>If your phone camera struggles to scan this (e.g. "config wrong" or fails to detect), the routing table may be too large. Use <b>⬇ Download config.cfg</b> instead.';
+          container.insertBefore(warn, container.firstChild);
+        }
+
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-family:var(--mono);font-size:9px;color:var(--text);margin-top:8px;text-align:center;';
+        meta.textContent = 'WIREGUARD CONFIG QR' + (usedMode === 'COMPACT' ? ' (COMPACT)' : '');
+        container.appendChild(meta);
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex; gap:8px; justify-content:center; margin-top:10px; flex-wrap:wrap;';
+
+        const btn = document.createElement('button');
+        btn.id = 'vpn-config-qr-download-btn';
+        btn.textContent = '⬇ Download Config QR';
+        btn.style.cssText = 'background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:7px;font-family:var(--mono);font-size:11px;cursor:pointer;letter-spacing:0.5px;';
+        
+        actions.appendChild(btn);
+        container.appendChild(actions);
+
+        btn.onclick = function () {
+          const canvas = container.querySelector('canvas');
+          const img = container.querySelector('img');
+          let dataUrl = '';
+          
+          if (canvas) {
+            const pad = 100; // ample spacing for QR + text
+            const textSpace = 80; // Extra vertical space for the label
+            const targetSize = Math.max(canvas.width, 560);
+            const halfWidth = targetSize + pad * 2;
+            
+            const paddedCanvas = document.createElement('canvas');
+            paddedCanvas.width = halfWidth * 2;
+            paddedCanvas.height = targetSize + pad * 2 + textSpace;
+            const ctx = paddedCanvas.getContext('2d');
+            
+            // Left half (white background)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, halfWidth, paddedCanvas.height);
+            
+            // Right half (dimmed background)
+            ctx.fillStyle = '#4c4c4c'; // 30% of white
+            ctx.fillRect(halfWidth, 0, halfWidth, paddedCanvas.height);
+            
+            ctx.imageSmoothingEnabled = false;
+            
+            // Draw normal QR (left)
+            const qrY = pad + textSpace / 2;
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, halfWidth / 2 - targetSize / 2, qrY, targetSize, targetSize);
+            
+            // Draw dimmed QR (right)
+            ctx.filter = 'brightness(0.3)';
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, halfWidth + halfWidth / 2 - targetSize / 2, qrY, targetSize, targetSize);
+            ctx.filter = 'none';
+            
+            // Add guiding text
+            ctx.font = 'bold 36px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            
+            // Left text
+            ctx.fillStyle = '#000000';
+            ctx.fillText('Standard Brightness', halfWidth / 2, pad / 2);
+            ctx.fillStyle = '#555555';
+            ctx.font = '28px Arial, sans-serif';
+            ctx.fillText('(Identical config, choose whichever scans better)', halfWidth / 2, pad / 2 + 45);
+            
+            // Right text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Arial, sans-serif';
+            ctx.fillText('Anti-Glare / Dimmed', halfWidth + halfWidth / 2, pad / 2);
+            ctx.fillStyle = '#bbbbbb';
+            ctx.font = '28px Arial, sans-serif';
+            ctx.fillText('(Identical config, choose whichever scans better)', halfWidth + halfWidth / 2, pad / 2 + 45);
+            
+            dataUrl = paddedCanvas.toDataURL('image/png');
+          } else if (img && img.src) {
+            dataUrl = img.src;
+          }
+
+          if (!dataUrl) {
+            btn.textContent = '⚠ Nothing to save';
+            setTimeout(() => { btn.textContent = '⬇ Download Config QR'; }, 2000);
+            return;
+          }
+
+          const a = document.createElement('a');
+          a.href = dataUrl;
+          a.download = 'wireguard-config-qr.png';
+          a.click();
+          
+          btn.textContent = '✓ Saved!';
+          btn.style.color = 'var(--green)';
+          btn.style.borderColor = 'var(--green)';
+          setTimeout(() => { 
+            btn.textContent = '⬇ Download Config QR'; 
+            btn.style.color = 'var(--text)'; 
+            btn.style.borderColor = 'var(--border)';
+          }, 1600);
+        };
+      } catch (e) {
+        container.innerHTML = `<div style="color:var(--muted);font-size:11px;font-family:var(--mono);">QR render failed: ${e.message}</div>`;
+      }
+    }
+
+    if (typeof QRCode !== 'undefined') {
+      render();
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+      s.onload = render;
+      s.onerror = () => {
+        container.innerHTML = `<div style="color:var(--muted);font-size:11px;font-family:var(--mono);padding:8px;">QR library unavailable.</div>`;
+      };
+      document.head.appendChild(s);
+    }
   };
 
   // ──────────────────────────────────────────────────────────────
@@ -741,47 +1333,167 @@
     const container = document.getElementById('vpn-qr-container');
     if (!container) return;
     if (!data) {
-      container.innerHTML = `<div style="color:var(--muted);font-size:12px;font-family:var(--mono);padding:10px;">Generate a key pair first.</div>`;
+      container.innerHTML = '';
+      container.style.display = 'none';
       return;
     }
     container.innerHTML = '';
     function makeQR() {
       try {
-        new QRCode(container, {
-          text: data, width: 180, height: 180,
-          colorDark: '#00e87a', colorLight: '#1a1a2e',
-          correctLevel: QRCode.CorrectLevel.M
-        });
+        container.style.background = 'var(--bg3)';
+        container.style.padding = '16px';
+        container.style.border = '1px solid var(--border)';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.alignItems = 'center';
+        
+        container.innerHTML = '';
+        
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.gap = '20px';
+        wrapper.style.alignItems = 'flex-start';
+        wrapper.style.justifyContent = 'center';
+        wrapper.style.flexWrap = 'wrap';
+        wrapper.style.width = '100%';
+
+        const renderSize = data.length > 500 ? 1024 : 560;
+
+        function createBox(isDimmed, labelText, subText) {
+          const col = document.createElement('div');
+          col.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:8px; max-width:280px; text-align:center;';
+          
+          const textWrap = document.createElement('div');
+          textWrap.style.cssText = 'display:flex; flex-direction:column; align-items:center; height:32px; justify-content:flex-end; margin-bottom:4px;';
+          
+          const label = document.createElement('div');
+          label.style.cssText = 'font-family:var(--mono);font-size:12px;color:var(--text);font-weight:bold;';
+          label.textContent = labelText;
+          textWrap.appendChild(label);
+          
+          if (subText) {
+            const subL = document.createElement('div');
+            subL.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.2;margin-top:2px;';
+            subL.textContent = subText;
+            textWrap.appendChild(subL);
+          }
+          
+          const qrBox = document.createElement('div');
+          qrBox.style.cssText = 'background: #ffffff; padding: 10px; border-radius: 8px; display: inline-block; margin: 0 auto;';
+          if (isDimmed) {
+             qrBox.style.filter = 'brightness(0.3)';
+          }
+
+          col.appendChild(textWrap);
+          col.appendChild(qrBox);
+          return { col, qrBox };
+        }
+
+        const typeStr = which === 'pub' ? 'public key' : 'pre-shared key';
+        const boxNormal = createBox(false, 'Standard Brightness', '(Identical ' + typeStr + ', choose whichever scans better)');
+        const boxDimmed = createBox(true, 'Anti-Glare / Dimmed', '(Identical ' + typeStr + ', choose whichever scans better)');
+
+        const cfg = {
+          text: data, width: renderSize, height: renderSize,
+          colorDark: '#000000', colorLight: '#ffffff',
+          correctLevel: data.length > 500 ? QRCode.CorrectLevel.L : QRCode.CorrectLevel.M
+        };
+
+        new QRCode(boxNormal.qrBox, cfg);
+        new QRCode(boxDimmed.qrBox, cfg);
+
+        const applyStyle = (b) => {
+          const canvas = b.querySelector('canvas');
+          const img = b.querySelector('img');
+          const cssScale = 'max-width: 100%; width: 280px; height: auto; image-rendering: pixelated;';
+          if (canvas) canvas.style.cssText = cssScale;
+          if (img) img.style.cssText = cssScale;
+        };
+
+        applyStyle(boxNormal.qrBox);
+        applyStyle(boxDimmed.qrBox);
+
+        wrapper.appendChild(boxNormal.col);
+        wrapper.appendChild(boxDimmed.col);
+        container.appendChild(wrapper);
 
         // Label
-        const label = document.createElement('div');
-        label.style.cssText = 'font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:8px;text-align:center;';
-        label.textContent = which === 'pub' ? 'PUBLIC KEY' : 'PRE-SHARED KEY';
-        container.appendChild(label);
+        const bottomLabel = document.createElement('div');
+        bottomLabel.style.cssText = 'font-family:var(--mono);font-size:9px;color:var(--text);margin-top:12px;text-align:center;width:100%;';
+        bottomLabel.textContent = which === 'pub' ? 'PUBLIC KEY' : 'PRE-SHARED KEY';
+        container.appendChild(bottomLabel);
 
-        // Download button — qrcodejs renders a <canvas> then hides it and shows an <img>.
-        // We read from the canvas (most reliable data source) with a small delay so the
-        // library has time to finish drawing before we capture it.
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex; gap:8px; justify-content:center; margin-top:10px; flex-wrap:wrap; width:100%;';
+
         const dlBtn = document.createElement('button');
         dlBtn.id = 'vpn-qr-download-btn';
         dlBtn.textContent = '⬇ Download QR';
-        dlBtn.style.cssText = [
-          'display:block', 'margin:10px auto 0', 'background:var(--bg2)',
-          'border:1px solid var(--green)', 'color:var(--green)',
-          'padding:6px 16px', 'border-radius:7px', 'font-family:var(--mono)',
-          'font-size:11px', 'cursor:pointer', 'letter-spacing:0.5px'
-        ].join(';');
+        dlBtn.style.cssText = 'background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:7px;font-family:var(--mono);font-size:11px;cursor:pointer;letter-spacing:0.5px;';
+
+        actions.appendChild(dlBtn);
+        container.appendChild(actions);
 
         dlBtn.onclick = function () {
-          // Prefer the canvas (has the pixel data); fall back to the img src
-          const canvas = container.querySelector('canvas');
-          const img    = container.querySelector('img');
-          let dataUrl  = '';
+          const canvas = boxNormal.qrBox.querySelector('canvas');
+          let dataUrl = '';
 
           if (canvas) {
-            dataUrl = canvas.toDataURL('image/png');
-          } else if (img && img.src) {
-            dataUrl = img.src; // already a data-URL when generated by qrcodejs
+            const pad = 100; // ample spacing for QR + text
+            const textSpace = 80; // Extra vertical space for the label
+            const targetSize = Math.max(canvas.width, 560);
+            const halfWidth = targetSize + pad * 2;
+            
+            const paddedCanvas = document.createElement('canvas');
+            paddedCanvas.width = halfWidth * 2;
+            paddedCanvas.height = targetSize + pad * 2 + textSpace;
+            const ctx = paddedCanvas.getContext('2d');
+            
+            // Left half (white background)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, halfWidth, paddedCanvas.height);
+            
+            // Right half (dimmed background)
+            ctx.fillStyle = '#4c4c4c'; // 30% of white
+            ctx.fillRect(halfWidth, 0, halfWidth, paddedCanvas.height);
+            
+            ctx.imageSmoothingEnabled = false;
+            
+            // Draw normal QR (left)
+            const qrY = pad + textSpace / 2;
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, halfWidth / 2 - targetSize / 2, qrY, targetSize, targetSize);
+            
+            // Draw dimmed QR (right)
+            ctx.filter = 'brightness(0.3)';
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, halfWidth + halfWidth / 2 - targetSize / 2, qrY, targetSize, targetSize);
+            ctx.filter = 'none';
+            
+            // Add guiding text
+            ctx.font = 'bold 36px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            
+            const keyTypeStr = which === 'pub' ? 'Public Key' : 'Pre-Shared Key';
+            
+            // Left text
+            ctx.fillStyle = '#000000';
+            ctx.fillText('Standard Brightness', halfWidth / 2, pad / 2);
+            ctx.fillStyle = '#555555';
+            ctx.font = '28px Arial, sans-serif';
+            ctx.fillText('(Identical ' + keyTypeStr + ', choose whichever scans better)', halfWidth / 2, pad / 2 + 45);
+            
+            // Right text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Arial, sans-serif';
+            ctx.fillText('Anti-Glare / Dimmed', halfWidth + halfWidth / 2, pad / 2);
+            ctx.fillStyle = '#bbbbbb';
+            ctx.font = '28px Arial, sans-serif';
+            ctx.fillText('(Identical ' + keyTypeStr + ', choose whichever scans better)', halfWidth + halfWidth / 2, pad / 2 + 45);
+            
+            dataUrl = paddedCanvas.toDataURL('image/png');
+          } else {
+            const img = qrBox.querySelector('img');
+            if (img && img.src) dataUrl = img.src;
           }
 
           if (!dataUrl) {
@@ -792,18 +1504,19 @@
 
           const filename = (which === 'pub' ? 'wireguard-public-key' : 'wireguard-psk') + '-qr.png';
           const a = document.createElement('a');
-          a.href     = dataUrl;
+          a.href = dataUrl;
           a.download = filename;
           a.click();
-
-          // Flash feedback
-          dlBtn.textContent  = '✓ Saved!';
-          dlBtn.style.color  = 'var(--green)';
-          setTimeout(() => { dlBtn.textContent = '⬇ Download QR'; }, 1800);
+          
+          dlBtn.textContent = '✓ Saved!';
+          dlBtn.style.color = 'var(--green)';
+          dlBtn.style.borderColor = 'var(--green)';
+          setTimeout(() => { 
+            dlBtn.textContent = '⬇ Download QR'; 
+            dlBtn.style.color = 'var(--text)'; 
+            dlBtn.style.borderColor = 'var(--border)';
+          }, 1800);
         };
-
-        container.appendChild(dlBtn);
-
       } catch (e) {
         container.innerHTML = `<div style="color:var(--muted);font-size:11px;font-family:var(--mono);">QR render failed: ${e.message}</div>`;
       }
@@ -1032,17 +1745,17 @@ ${pskLine}`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:18px;">
       <div>
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:4px;">ADDRESS</div>
-        <input type="text" value="10.0.0.1/24" oninput="vpnCfgField('address',this.value)" placeholder="10.0.0.1/24" autocomplete="off" spellcheck="false"
+        <input type="text" oninput="vpnCfgField('address',this.value)" placeholder="10.0.0.1/24" autocomplete="off" spellcheck="false"
           style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:7px;font-family:var(--mono);font-size:11px;outline:none;">
       </div>
       <div>
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:4px;">LISTEN PORT <span style="opacity:0.5;">(server)</span></div>
-        <input type="text" value="51820" oninput="vpnCfgField('listenPort',this.value)" placeholder="51820" autocomplete="off"
+        <input type="text" oninput="vpnCfgField('listenPort',this.value)" placeholder="51820" autocomplete="off"
           style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:7px;font-family:var(--mono);font-size:11px;outline:none;">
       </div>
       <div>
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:4px;">DNS</div>
-        <input type="text" value="1.1.1.1" oninput="vpnCfgField('dns',this.value)" placeholder="1.1.1.1" autocomplete="off"
+        <input type="text" oninput="vpnCfgField('dns',this.value)" placeholder="1.1.1.1" autocomplete="off"
           style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:7px;font-family:var(--mono);font-size:11px;outline:none;">
       </div>
       <div>
@@ -1055,14 +1768,21 @@ ${pskLine}`
     <!-- Peers -->
     <div style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--cyan);letter-spacing:1px;margin-bottom:10px;">[PEERS]</div>
     <div id="vpn-peers-list"></div>
-    <button onclick="vpnAddPeer()" style="width:100%;background:var(--bg3);border:1px dashed var(--border);color:var(--cyan);padding:10px 0;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;margin-bottom:18px;letter-spacing:0.5px;">+ Add Peer</button>
+    <button onclick="vpnAddPeer()" style="width:100%;background:var(--bg3);border:1px dashed var(--border);color:var(--cyan);padding:10px 0;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;margin-bottom:10px;letter-spacing:0.5px;">+ Add Peer</button>
+    <button onclick="vpnClearConfigBuilder()" style="width:100%;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.4);color:var(--red,#f87171);padding:10px 0;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;margin-bottom:18px;letter-spacing:0.5px;">🧹 Wipe Config (Interface + Peers)</button>
 
     <!-- Config Preview -->
     <div style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);letter-spacing:1px;margin-bottom:8px;">CONFIG PREVIEW</div>
-    <pre id="vpn-config-pre" style="background:var(--bg3);border-radius:8px;padding:14px;font-family:var(--mono);font-size:12px;color:var(--muted2);line-height:1.9;overflow-x:auto;border:1px solid var(--border);white-space:pre;max-height:340px;overflow-y:auto;"></pre>
+    <textarea id="vpn-config-pre" rows="14" oninput="vpnConfigPreviewInput()" onpaste="vpnConfigPlainPaste(event)" spellcheck="false" placeholder="Paste Wireguard config or generate the key pairr first...&#10;&#10;[Interface]&#10;ListenPort =&#10;PrivateKey =&#10;Address =&#10;DNS =&#10;&#10;[Peer]&#10;PublicKey =&#10;AllowedIPs =&#10;Endpoint ="
+      style="width:100%;box-sizing:border-box;background:var(--bg3);border-radius:8px;padding:14px;font-family:var(--mono);font-size:12px;color:var(--muted2);line-height:1.7;overflow:auto;border:1px solid var(--border);outline:none;resize:vertical;"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
       <button id="vpn-config-copy-btn" onclick="vpnCopyConfig()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">📋 Copy Config</button>
-      <button id="vpn-download-cfg-btn" onclick="vpnDownloadConfig()" style="background:var(--bg3);border:1px solid var(--green);color:var(--green);padding:8px 16px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">⬇ Download wg0.conf</button>
+      <button id="vpn-download-cfg-btn" onclick="vpnDownloadConfig()" style="background:var(--bg3);border:1px solid var(--green);color:var(--green);padding:8px 16px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">⬇ Download config.cfg</button>
+      <button id="vpn-config-qr-btn" onclick="vpnShowConfigQR()" style="background:var(--bg3);border:1px solid var(--cyan);color:var(--cyan);padding:8px 16px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">📱 Generate QR Code</button>
+      <button id="vpn-apply-preview-btn" onclick="vpnApplyPreviewToFields()" style="background:var(--bg3);border:1px solid var(--amber);color:var(--amber);padding:8px 16px;border-radius:7px;font-size:11px;font-family:var(--mono);cursor:pointer;">↥ Populate Above</button>
+    </div>
+    <div id="vpn-config-qr-container" style="margin-top:12px;background:var(--bg3);border-radius:10px;padding:14px;display:inline-block;border:1px solid var(--border);min-width:60px;min-height:40px;">
+      <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">Config QR will appear here.</div>
     </div>
   </div>
 </div><!-- /tab-config -->

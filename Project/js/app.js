@@ -28,6 +28,8 @@ function gotoPage(id, btn) {
   const pg = $('page-'+id);
   if(pg) { pg.classList.add('active'); void pg.offsetWidth; pg.classList.add('fade-up'); }
   if(btn) btn.classList.add('active');
+  const viewPanel = document.querySelector('.content');
+  if(viewPanel) viewPanel.scrollTop = 0;
   if(window.innerWidth <= 700) closeMob();
   // init pages
   if(id==='binary') { initPB(); dec2bin(); calcAND(); }
