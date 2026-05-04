@@ -244,6 +244,61 @@
     </button>
   
   </div>
+
+
+    <!-- ── OSPF Mastery ── -->
+
+
+    <div class="nav-section">
+      <div class="nav-label">OSPF Mastery</div>
+
+
+      <!-- OSPF Indepth -->
+      <button class="nav-btn" onclick="gotoPage('ospf-sim',this)">
+        <span class="icon">🕸</span> OSPF Neighbor States
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-dr',this)">
+        <span class="icon">🗳</span> OSPF DR/BDR Election
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-lsa',this)">
+        <span class="icon">📡</span> OSPF LSA Flooding
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-atc',this)">
+        <span class="icon">🏗</span> OSPF Area Type Comparator
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-psel',this)">
+        <span class="icon">⚖</span> OSPF Path Selection
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-summ',this)">
+        <span class="icon">⊕</span> OSPF Route Summarization
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-fc',this)">
+        <span class="icon">⚡</span> OSPF Virtual Link + BFD
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+
+      <button class="nav-btn" onclick="gotoPage('ospf-rf',this)">
+        <span class="icon">🔧</span> OSPF Route Filtering
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-lt',this)">
+        <span class="icon">🔗</span> OSPF Special Link Types
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+      <button class="nav-btn" onclick="gotoPage('ospf-sa',this)">
+        <span class="icon">🏢</span> OSPF Stub Area Variants
+        <span class="nav-badge badge-exp">New</span>
+      </button>
+
+    </div>
+
+
       <!-- ── PROTOCOL SIMULATORS ── -->
     <div class="nav-section">
       <div class="nav-label">Protocol Simulators</div>
@@ -275,6 +330,7 @@
         <span class="icon">📏</span> MTU / Fragment
         <span class="nav-badge badge-new" style="background:rgba(74,222,128,0.12);color:var(--green)">New</span>
       </button>
+
       <button class="nav-btn" onclick="gotoPage('eigrp',this)">
         <span class="icon">🔀</span> EIGRP DUAL
         <span class="nav-badge badge-new" style="background:rgba(74,222,128,0.12);color:var(--green)">New</span>
@@ -302,7 +358,10 @@
         <span class="nav-badge badge-new" style="background:rgba(74,222,128,0.12);color:var(--green)">New</span>
       </button>
       
+      
+      
     </div>
+    
   <div class="nav-section">
     <div class="nav-label">Analysis Tools</div>
     <button class="nav-btn" onclick="gotoPage('route-parser',this)">
@@ -4213,6 +4272,84 @@ show interfaces ge-0/0/1 detail | match filter</pre>
   </div>
 </div>
 
+<!-- ══════ PAGE: OSPF NEIGHBOR STATE MACHINE ══════ -->
+<div class="page fade-up" id="page-ospf-sim">
+  <div class="page-header">
+    <div class="page-title">OSPF Neighbor State Machine <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">2-Router P2P · 3-Router Broadcast (DR/BDR) · 4-Router Broadcast · 7 Troubleshoot Scenarios · Wireshark Packet Panel</div>
+  </div>
+  <div id="ospf-sim-container"></div>
+</div>
+<div class="page fade-up" id="page-ospf-dr">
+  <div class="page-header">
+    <div class="page-title">OSPF DR/BDR Election <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">5 Scenarios · Priority Sliders · Non-Preemption · DR Failure · RFC 2328 §9.4</div>
+  </div>
+  <div id="ospf-dr-container"></div>
+</div>
+<div class="page fade-up" id="page-ospf-lsa">
+  <div class="page-header">
+    <div class="page-title">OSPF LSA Flooding <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">Types 1–7 · Multi-Area · LSDB per Router · Type 7→5 Translation · RFC 2328/3101</div>
+  </div>
+  <div id="ospf-lsa-container"></div>
+</div>
+<div class="page fade-up" id="page-ospf-atc">
+  <div class="page-header">
+    <div class="page-title">OSPF Area Type Comparator <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">Standard · Stub · Totally Stub · NSSA · Totally NSSA — live toggle</div>
+  </div>
+  <div id="ospf-atc-container"></div>
+</div>
+
+<div class="page fade-up" id="page-ospf-psel">
+  <div class="page-header">
+    <div class="page-title">OSPF Path Selection <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">O · O IA · E1 · E2 · N1 · N2 — interactive cost sliders</div>
+  </div>
+  <div id="ospf-psel-container"></div>
+</div>
+
+<div class="page fade-up" id="page-ospf-summ">
+  <div class="page-header">
+    <div class="page-title">OSPF Route Summarization <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">ABR Type-3 collapse · ASBR Type-5 aggregate · Discontiguous troubleshoot · Null0 discard route</div>
+  </div>
+  <div id="ospf-summ-container"></div>
+</div>
+
+<div class="page fade-up" id="page-ospf-fc">
+  <div class="page-header">
+    <div class="page-title">OSPF Virtual Link + BFD Fast Convergence <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">Virtual Link adjacency · BFD 50ms detection · SPF throttle timers · Convergence timeline</div>
+  </div>
+  <div id="ospf-fc-container"></div>
+</div>
+
+<div class="page fade-up" id="page-ospf-rf">
+  <div class="page-header">
+    <div class="page-title">OSPF Route Filtering &amp; Policy <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">distribute-list · prefix-list · filter-list · route-map · T3/T5 control · loop prevention</div>
+  </div>
+  <div id="ospf-rf-container"></div>
+</div>
+
+<div class="page fade-up" id="page-ospf-lt">
+  <div class="page-header">
+    <div class="page-title">OSPF Special Link Types <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">Broadcast · Point-to-Point · P2MP · NBMA · Loopback · GRE Tunnel</div>
+  </div>
+  <div id="ospf-lt-container"></div>
+</div>
+
+<div class="page fade-up" id="page-ospf-sa">
+  <div class="page-header">
+    <div class="page-title">OSPF Stub Area Variants <span class="tag tag-e">CCIE</span></div>
+    <div class="page-desc">Stub · Totally Stub · NSSA · Totally NSSA · LSA presence · configuration &amp; troubleshoot</div>
+  </div>
+  <div id="ospf-sa-container"></div>
+</div>
+
 <div id="page-mtu"        class="page"></div>
 <div id="page-acl-sim"    class="page"></div>
 
@@ -4235,8 +4372,8 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <div id="page-converters" class="page"></div>
 
 
-</div><!-- /content -->
-</div><!-- /app -->
+
+
 </main><!-- /content -->
 
 
@@ -4244,7 +4381,6 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 </div><!-- /app -->
 
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
 
 
 
@@ -4268,6 +4404,9 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <script src="Project/js/password.js"></script>
 <script src="Project/js/interview.js"></script>
 <script src="Project/js/bgp-regex.js"></script>  
+<script src="Project/js/ospf.js"></script>
+<script src="Project/js/ospf-phase89.js"></script>
+<script src="Project/js/ospf-phase101213.js"></script>
 <script src="Project/js/mac.js"></script>
 <script src="Project/js/vpn.js"></script>
 <script src="Project/js/ping.js"></script>
@@ -4275,5 +4414,10 @@ show interfaces ge-0/0/1 detail | match filter</pre>
 <script src="Project/js/bgp-asn.js"></script>
 <script src="Project/js/ports.js"></script>
 <script src="Project/js/converters.js"></script>
+
+
+<!-- Combined engine -->
+
+
 </body>
 </html>
