@@ -14,6 +14,8 @@
     if (document.getElementById('page-tls').classList.contains('active'))        tlsDrawTopo(false);
     if (document.getElementById('page-icmp').classList.contains('active'))       icmpDrawTopo(false);
     if (document.getElementById('page-dhcp-relay').classList.contains('active')) relayDrawTopo();
+    if (document.getElementById('page-ospf-summ') && document.getElementById('page-ospf-summ').classList.contains('active')) summResize();
+    if (document.getElementById('page-ospf-fc')   && document.getElementById('page-ospf-fc').classList.contains('active'))   fcResize();
 
   });
  
@@ -63,6 +65,18 @@ function gotoPage(id, btn) {
   if(id==='dhcp') { setTimeout(()=>{dhcpDrawTopo(false); dhcpRenderPool({offered:null,leased:null}); updateDoraChain(0);}, 100); }
   if(id==='dns')  { setTimeout(()=>{dnsSetMode(dnsMode||'recursive');}, 100); }
   if(id==='arp')        { setTimeout(()=>arpInit(), 100); }
+  if(id==='ospf-sim')   { setTimeout(()=>ospfInit(), 150); }
+  // In app.js gotoPage():
+  if(id==='ospf-dr') { setTimeout(()=>ospfDrInit(), 100); }
+  if(id==='ospf-lsa') { setTimeout(()=>ospfLsaInit(), 100); }
+  if(id==='ospf-atc')  { setTimeout(()=>ospfAtcInit(),  100); }
+  if(id==='ospf-psel') { setTimeout(()=>ospfPselInit(), 100); }
+  if(id==='ospf-summ') { setTimeout(()=>ospfSummInit(), 100); }
+  if(id==='ospf-fc')   { setTimeout(()=>ospfFcInit(),   100); }
+  if (id === 'ospf-rf') { setTimeout(() => ospfRfInit(), 100); }
+  if (id === 'ospf-lt') { setTimeout(() => ospfLtInit(), 100); }
+  if (id === 'ospf-sa') { setTimeout(() => ospfSaInit(), 100); }
+  
   if(id==='nat')        { setTimeout(()=>natInit(), 100); }
   if(id==='tcp-seg')    { setTimeout(()=>tcpSegInit(), 100); }
   if(id==='acl-sim')    { setTimeout(()=>aclSimInit(), 100); }
@@ -74,6 +88,7 @@ function gotoPage(id, btn) {
   if(id==='icmp')       { setTimeout(()=>icmpInit(), 100); }
   if(id==='bgp-anim') { setTimeout(()=>{ if(!BA.canvas) bgpAnimInit(); },100); }
   if(id==='bgp-anim') { setTimeout(()=>{ if(!BA.canvas) bgpAnimInit(); },100); }
+  
   if(history && history.pushState) history.pushState(null,'','#'+id);
 }
 function toggleMob() {
@@ -9195,3 +9210,5 @@ function pfxGoToTree(prefix) {
         mtuInit();
       }
     });
+
+
