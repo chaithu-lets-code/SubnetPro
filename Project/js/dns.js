@@ -29,17 +29,38 @@
   
   // ─── DNS Chain labels ───
   const DNS_RECURSIVE_CHAIN = [
-    'Browser Cache','OS Cache','/etc/hosts','Router Cache','Resolver Cache',
+    'Browser Cache','OS + /etc/hosts','Router Cache','Resolver Cache',
     '→ Root NS','Root→TLD','TLD→Auth',
     'Auth→TLD','TLD→Root','Root→Resolver',
     '→ PC','Done ✓'
-  ];  
-  const DNS_ITERATIVE_CHAIN  = ['Browser Cache','OS Cache','Router Cache','Resolver Cache','→ Root NS','← Root Ref','→ TLD NS','← TLD Ref','→ Auth NS','← Auth IP','→ PC','Done ✓'];
+  ];
+  const DNS_ITERATIVE_CHAIN = [
+    'Browser Cache','OS + /etc/hosts','Router Cache','Resolver Cache',
+    '→ Root NS','← Root Ref','→ TLD NS','← TLD Ref',
+    '→ Auth NS','← Auth Answer','→ PC','Done ✓'
+  ];
+  const DNS_NXDOMAIN_CHAIN = [
+    'Browser Cache','OS + /etc/hosts','Router Cache','Resolver Cache',
+    '→ Root NS','← Root Ref','→ TLD NS','← TLD Ref',
+    '→ Auth NS','← NXDOMAIN','→ PC','Error Shown ✓'
+  ];
+
+  function dnsGetActiveSteps() {
+    if (dnsMode === 'recursive') return DNS_RECURSIVE_STEPS;
+    if (dnsMode === 'iterative') return DNS_ITERATIVE_STEPS;
+    return DNS_NXDOMAIN_STEPS;
+  }
+
+  function dnsGetActiveChainLabels() {
+    if (dnsMode === 'recursive') return DNS_RECURSIVE_CHAIN;
+    if (dnsMode === 'iterative') return DNS_ITERATIVE_CHAIN;
+    return DNS_NXDOMAIN_CHAIN;
+  }
   
   function updateDnsChain(step) {
     const chainEl = document.getElementById('dns-chain-bar');
     if (!chainEl) return;
-    const labels = dnsMode === 'recursive' ? DNS_RECURSIVE_CHAIN : DNS_ITERATIVE_CHAIN;
+    const labels = dnsGetActiveChainLabels();
     let html = '';
     labels.forEach((lbl, i) => {
       const idx = i + 1;
@@ -329,6 +350,142 @@
       cacheAdd: null
     }
   ];
+
+  // ─────────────────────────────────────────
+  // DNS NXDOMAIN STEPS — 12 steps
+  // ─────────────────────────────────────────
+  const DNS_NXDOMAIN_STEPS = [
+    {
+      step:1, title:'Step 1 — Browser DNS Cache: MISS',
+      tag:'BROWSER CACHE', tagColor:'var(--blue)', tagBg:'rgba(91,156,246,0.12)',
+      desc:'Browser checks local DNS cache for <strong>ghost.subnetlab.invalid</strong>. Cache MISS.',
+      from:'pc', to:'pc', via:[], pktColor:'#f87171', pktLabel:'MISS',
+      activeNodes:['pc'],
+      pktCard:['BROWSER DNS CACHE','ghost.subnetlab.invalid → ❌ MISS','No positive or negative cache hit','→ Check OS layer next'],
+      fields:[{k:'Domain',v:'ghost.subnetlab.invalid'},{k:'Browser Cache',v:'❌ MISS',c:'#f87171'},{k:'Next',v:'OS + /etc/hosts check →'}],
+      cacheAdd: null
+    },
+    {
+      step:2, title:'Step 2 — OS Cache & /etc/hosts: MISS',
+      tag:'OS CACHE', tagColor:'var(--blue)', tagBg:'rgba(91,156,246,0.12)',
+      desc:'OS checks <strong>/etc/hosts</strong> and OS DNS cache. No static entry and no cached result.',
+      from:'pc', to:'pc', via:[], pktColor:'#f87171', pktLabel:'MISS',
+      activeNodes:['pc'],
+      pktCard:['OS DNS CACHE + /etc/hosts','/etc/hosts → ❌ no entry','OS resolver cache → ❌ MISS','→ Query router'],
+      fields:[{k:'/etc/hosts',v:'❌ No static mapping'},{k:'OS Cache',v:'❌ MISS',c:'#f87171'},{k:'Next',v:'Router DNS cache →'}],
+      cacheAdd: null
+    },
+    {
+      step:3, title:'Step 3 — Router Cache: MISS → Forward',
+      tag:'ROUTER CACHE', tagColor:'var(--purple)', tagBg:'rgba(167,139,250,0.12)',
+      desc:'Router cache has no record. Query is forwarded to resolver 8.8.8.8.',
+      from:'pc', to:'rtr', via:['sw'],
+      pktColor:'#a78bfa', pktLabel:'DNS?',
+      activeNodes:['pc','sw','rtr'],
+      pktCard:['QUERY → ROUTER','Router cache: ❌ MISS','Forward to resolver 8.8.8.8','Scenario: expected NXDOMAIN'],
+      fields:[{k:'Router Cache',v:'❌ MISS'},{k:'Forwarding',v:'8.8.8.8',c:'#38d9c0'},{k:'Scenario',v:'Negative response (NXDOMAIN)'}],
+      cacheAdd: null
+    },
+    {
+      step:4, title:'Step 4 — Resolver Cache: MISS',
+      tag:'RESOLVER CACHE', tagColor:'var(--cyan)', tagBg:'rgba(56,217,192,0.12)',
+      desc:'Resolver has no positive or negative cached record for this name, so it starts iterative resolution.',
+      from:'rtr', to:'resolver', via:['inet'],
+      pktColor:'#38d9c0', pktLabel:'Q?',
+      activeNodes:['rtr','inet','resolver'],
+      pktCard:['RESOLVER CACHE CHECK','Positive cache: ❌ MISS','Negative cache: ❌ MISS','→ Query Root NS'],
+      fields:[{k:'Resolver',v:'8.8.8.8 (Google DNS)'},{k:'Positive Cache',v:'❌ MISS'},{k:'Negative Cache',v:'❌ MISS'},{k:'Next',v:'Root NS query →',c:'#fbbf24'}],
+      cacheAdd: null
+    },
+    {
+      step:5, title:'Step 5 — Resolver → Root NS',
+      tag:'ITER #1 → ROOT', tagColor:'var(--amber)', tagBg:'rgba(251,191,36,0.12)',
+      desc:'Resolver asks Root NS who handles the <strong>.invalid</strong> zone.',
+      from:'resolver', to:'root', via:[],
+      pktColor:'#fbbf24', pktLabel:'ITER\n#1',
+      activeNodes:['resolver','root'],
+      pktCard:['ITER #1 → ROOT NS','Question: authority for .invalid?','RD=0 referral flow','→ Expect referral'],
+      fields:[{k:'Iterative Step',v:'#1 of 3',c:'#fbbf24'},{k:'Question',v:'Who serves .invalid?'},{k:'Mode',v:'Referral-based'}],
+      cacheAdd: null
+    },
+    {
+      step:6, title:'Step 6 — Root Referral Returned',
+      tag:'ROOT REFERRAL', tagColor:'var(--amber)', tagBg:'rgba(251,191,36,0.12)',
+      desc:'Root returns an NS referral for <strong>.invalid</strong>. Still no final answer.',
+      from:'root', to:'resolver', via:[],
+      pktColor:'#fbbf24', pktLabel:'REF\n.invalid',
+      activeNodes:['root','resolver'],
+      pktCard:['← ROOT REFERRAL','NS for .invalid zone','AA=0 (not authoritative)','→ Resolver follows referral'],
+      fields:[{k:'Response',v:'Referral (NS)',c:'#fbbf24'},{k:'Zone',v:'.invalid'},{k:'AA',v:'0'}],
+      cacheAdd: {domain:'.invalid NS',type:'NS',value:'a.invalid-servers.net',ttl:'172800s'}
+    },
+    {
+      step:7, title:'Step 7 — Resolver → TLD NS',
+      tag:'ITER #2 → TLD', tagColor:'var(--purple)', tagBg:'rgba(167,139,250,0.12)',
+      desc:'Resolver contacts the referred TLD NS for subnetlab.invalid delegation details.',
+      from:'resolver', to:'tld', via:[],
+      pktColor:'#a78bfa', pktLabel:'ITER\n#2',
+      activeNodes:['resolver','tld'],
+      pktCard:['ITER #2 → TLD NS','Ask: auth NS for subnetlab.invalid?','Referral expected','Resolver continues chain'],
+      fields:[{k:'Iterative Step',v:'#2 of 3',c:'#a78bfa'},{k:'Question',v:'Auth NS for subnetlab.invalid?'},{k:'Next',v:'Follow referral'}],
+      cacheAdd: null
+    },
+    {
+      step:8, title:'Step 8 — TLD Referral to Auth NS',
+      tag:'TLD REFERRAL', tagColor:'var(--purple)', tagBg:'rgba(167,139,250,0.12)',
+      desc:'TLD NS returns referral to authoritative nameserver for subnetlab.invalid.',
+      from:'tld', to:'resolver', via:[],
+      pktColor:'#a78bfa', pktLabel:'REF\nAuth',
+      activeNodes:['tld','resolver'],
+      pktCard:['← TLD REFERRAL','Auth NS: ns1.subnetlab.invalid','AA=0','→ Query authoritative NS'],
+      fields:[{k:'Response',v:'Referral (NS)',c:'#a78bfa'},{k:'Auth NS',v:'ns1.subnetlab.invalid'},{k:'AA',v:'0'}],
+      cacheAdd: {domain:'subnetlab.invalid NS',type:'NS',value:'ns1.subnetlab.invalid',ttl:'172800s'}
+    },
+    {
+      step:9, title:'Step 9 — Resolver → Authoritative NS',
+      tag:'ITER #3 → AUTH', tagColor:'var(--green)', tagBg:'rgba(74,222,128,0.12)',
+      desc:'Resolver asks authoritative NS for A record of <strong>ghost.subnetlab.invalid</strong>.',
+      from:'resolver', to:'auth', via:[],
+      pktColor:'#4ade80', pktLabel:'ITER\n#3',
+      activeNodes:['resolver','auth'],
+      pktCard:['ITER #3 → AUTH NS','Query: A ghost.subnetlab.invalid','Authoritative server decides final status','Expect definitive response'],
+      fields:[{k:'Iterative Step',v:'#3 of 3',c:'#4ade80'},{k:'Query',v:'A ghost.subnetlab.invalid'},{k:'Expect',v:'Authoritative final status'}],
+      cacheAdd: null
+    },
+    {
+      step:10, title:'Step 10 — Authoritative NXDOMAIN (RCODE=3)',
+      tag:'NXDOMAIN ✖', tagColor:'#f87171', tagBg:'rgba(248,113,113,0.12)',
+      desc:'Authoritative NS confirms name does not exist and returns <strong>NXDOMAIN</strong> (RCODE=3). Resolver can negative-cache this response for a short TTL.',
+      from:'auth', to:'resolver', via:[],
+      pktColor:'#f87171', pktLabel:'NX\nRCODE=3',
+      activeNodes:['auth','resolver'],
+      pktCard:['← AUTHORITATIVE NXDOMAIN','RCODE=3 (Name Error)','SOA included for negative caching','No A/AAAA answer exists'],
+      fields:[{k:'Authoritative Result',v:'NXDOMAIN',c:'#f87171'},{k:'RCODE',v:'3 (Name Error)'},{k:'Caching',v:'Negative cache allowed (SOA TTL)'}],
+      cacheAdd: {domain:'ghost.subnetlab.invalid',type:'NEG',value:'NXDOMAIN',ttl:'60s'}
+    },
+    {
+      step:11, title:'Step 11 — Resolver Returns NXDOMAIN to Client',
+      tag:'ERROR → PC', tagColor:'#f87171', tagBg:'rgba(248,113,113,0.12)',
+      desc:'Resolver returns NXDOMAIN to the client. Router/OS may also cache this negative result for a short interval.',
+      from:'resolver', to:'pc', via:['inet','rtr','sw'],
+      pktColor:'#f87171', pktLabel:'NXDOMAIN',
+      activeNodes:['resolver','inet','rtr','sw','pc'],
+      pktCard:['NXDOMAIN → CLIENT','No DNS answer section','Client receives definitive name error','Short negative TTL may apply'],
+      fields:[{k:'Client Result',v:'NXDOMAIN',c:'#f87171'},{k:'Answer',v:'No IP returned'},{k:'Effect',v:'Lookup fails immediately'}],
+      cacheAdd: null
+    },
+    {
+      step:12, title:'Step 12 — Browser Shows Name Resolution Error',
+      tag:'DONE ✖', tagColor:'#f87171', tagBg:'rgba(248,113,113,0.12)',
+      desc:'Browser cannot open a TCP session because there is no resolved IP. User sees a DNS error page such as <strong>DNS_PROBE_FINISHED_NXDOMAIN</strong>.',
+      from:'pc', to:'pc', via:[],
+      pktColor:'#f87171', pktLabel:'ERROR',
+      activeNodes:['pc'],
+      pktCard:['DNS FAIL END STATE','DNS_PROBE_FINISHED_NXDOMAIN','No TCP handshake attempted','Fix hostname or DNS records'],
+      fields:[{k:'Browser',v:'DNS_PROBE_FINISHED_NXDOMAIN',c:'#f87171'},{k:'TCP/HTTPS',v:'Not started'},{k:'Reason',v:'Hostname does not exist'}],
+      cacheAdd: null
+    }
+  ];
   
   function dnsSetMode(mode) {
     dnsMode = mode;
@@ -339,13 +496,15 @@
   
     const descEl = document.getElementById('dns-mode-desc');
     const totalEl = document.getElementById('dns-step-total');
-    const steps = mode === 'recursive' ? DNS_RECURSIVE_STEPS : DNS_ITERATIVE_STEPS;
+    const steps = dnsGetActiveSteps();
     if (totalEl) totalEl.textContent = steps.length;
     if (descEl) {
       if (mode === 'recursive') {
         descEl.innerHTML = `<strong style="color:var(--cyan)">Recursive Query</strong> — Full real-world chain: Browser Cache → OS Cache → /etc/hosts → Router DNS Cache → Resolver Cache → Root NS → TLD NS → Auth NS → Answer. The PC sends ONE query and gets ONE complete answer.`;
-      } else {
+      } else if (mode === 'iterative') {
         descEl.innerHTML = `<strong style="color:var(--purple)">Iterative Query</strong> — Same cache chain, but the resolver performs <em>iterative</em> queries to each NS level (RD=0), getting referrals and following them step by step. Root → TLD → Auth. Resolver does the legwork itself.`;
+      } else {
+        descEl.innerHTML = `<strong style="color:#f87171">NXDOMAIN Scenario</strong> — Resolver follows the full referral chain, but the authoritative server returns <strong>NXDOMAIN (RCODE=3)</strong>. This demonstrates negative answers and short negative caching behavior.`;
       }
     }
     updateDnsChain(0);
@@ -584,7 +743,7 @@
   }
 
   function dnsAnimateStep(step) {
-    const steps = dnsMode === 'recursive' ? DNS_RECURSIVE_STEPS : DNS_ITERATIVE_STEPS;
+    const steps = dnsGetActiveSteps();
     const s = steps[step - 1];
     if (!s) return;
     const nodes = DNS_NODES;
@@ -623,7 +782,7 @@
   }
   
   function dnsUpdateUI() {
-    const steps = dnsMode === 'recursive' ? DNS_RECURSIVE_STEPS : DNS_ITERATIVE_STEPS;
+    const steps = dnsGetActiveSteps();
     const step = dnsCurrentStep;
     const info = document.getElementById('dns-step-info');
     const numEl = document.getElementById('dns-step-num');
@@ -676,7 +835,7 @@
   
   function dnsStep(dir) {
     if (dnsAnimId) { cancelAnimationFrame(dnsAnimId); clearTimeout(dnsAnimId); dnsAnimId = null; }
-    const steps = dnsMode === 'recursive' ? DNS_RECURSIVE_STEPS : DNS_ITERATIVE_STEPS;
+    const steps = dnsGetActiveSteps();
     const newStep = dnsCurrentStep + dir;
     if (newStep < 0 || newStep > steps.length) return;
     dnsCurrentStep = newStep;
@@ -696,10 +855,11 @@
   
   function dnsAutoPlay() {
     if (!dnsPlaying) return;
-    const steps = dnsMode === 'recursive' ? DNS_RECURSIVE_STEPS : DNS_ITERATIVE_STEPS;
+    const steps = dnsGetActiveSteps();
     if (dnsCurrentStep >= steps.length) {
       dnsPlaying = false;
-      document.getElementById('dns-play-btn').textContent = '▶ Play';
+      const btn = document.getElementById('dns-play-btn');
+      if (btn) btn.textContent = '▶ Play';
       return;
     }
     dnsStep(1);

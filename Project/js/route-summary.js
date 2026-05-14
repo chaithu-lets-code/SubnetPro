@@ -388,5 +388,6 @@
 </div>`;
   }
 
-  document.addEventListener('DOMContentLoaded', rsSummaryInit);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', rsSummaryInit);
+  else rsSummaryInit();
 })();

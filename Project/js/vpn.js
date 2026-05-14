@@ -1186,6 +1186,7 @@ ${pskLine}`
     vpnUpdateConfigPreview();
   }
 
-  document.addEventListener('DOMContentLoaded', vpnInit);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', vpnInit);
+  else vpnInit();
 
 })();

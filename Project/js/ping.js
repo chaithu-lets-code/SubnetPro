@@ -423,5 +423,6 @@
 </div>`;
   }
 
-  document.addEventListener('DOMContentLoaded', pingInit);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pingInit);
+  else pingInit();
 })();

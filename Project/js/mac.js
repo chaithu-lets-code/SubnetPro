@@ -327,6 +327,7 @@
       if (inp) inp.addEventListener('input', macRender);
     }
   
-    document.addEventListener('DOMContentLoaded', macInit);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', macInit);
+    else macInit();
   
   })();
