@@ -24,6 +24,26 @@
 
 .nav-section { padding: 16px 12px 8px; }
 .nav-label { font-family: var(--mono); font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; padding: 0 8px; margin-bottom: 6px; }
+.nav-label.is-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.nav-label.is-toggle::after {
+  content: '▾';
+  font-size: 10px;
+  color: var(--muted2);
+  transition: transform 0.15s ease;
+}
+.nav-section.collapsed .nav-label.is-toggle::after {
+  transform: rotate(-90deg);
+}
+.nav-section.collapsed .nav-btn,
+.nav-section.collapsed .nav-sub {
+  display: none;
+}
 .nav-btn {
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 9px 12px;
