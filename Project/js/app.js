@@ -29,9 +29,11 @@ const PAGE_SCRIPTS = {
   'acl-builder':   ['Project/js/acl.js'],
   'acl-sim':       ['Project/js/acl.js'],
   'arp':           ['Project/js/arp.js'],
-  'bgp-anim':      ['Project/js/bgp.js'],
+  'bgp-anim':      ['Project/js/bgp-anim.js'],
   'bgp-asn':       ['Project/js/bgp-asn.js'],
+  'bgp-communities':['Project/js/bgp-communities.js'],
   'bgp-hijack':    ['Project/js/bgp.js'],
+  'bgp-nexthop':   ['Project/js/bgp-nexthop.js'],
   'bgp-regex':     ['Project/js/bgp-regex.js'],
   'bgp-tool':      ['Project/js/bgp.js'],
   'ccie':          ['Project/js/course.js'],
@@ -149,7 +151,9 @@ function runPageInit(id) {
   if(id==='broken-configs'){ setTimeout(()=>_call('bcInit'), 100); }
   if(id==='route-parser')  { _call('rpClear'); }
   if(id==='net-design')    { setTimeout(()=>_call('ndRender'), 100); }
+  if(id==='bgp-communities'){ setTimeout(()=>_call('bgpCommInit'), 100); }
   if(id==='bgp-hijack')    { setTimeout(()=>_call('hijackInit'), 100); }
+  if(id==='bgp-nexthop')   { setTimeout(()=>_call('bgpNhInit'), 100); }
   if(id==='tunnel-builder'){ _call('tbRender'); }
   if(id==='stp-sim')       { setTimeout(()=>_call('stpSimInit'), 120); }
   if(id==='vlan-viz')      { setTimeout(()=>_call('vlanVizInit'), 100); }
