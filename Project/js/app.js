@@ -106,7 +106,8 @@ function gotoPage(id, btn) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   pg.classList.add('active'); void pg.offsetWidth; pg.classList.add('fade-up');
   if(btn) btn.classList.add('active');
-  syncSidebarActiveSection();
+  const viewPanel = document.querySelector('.content');
+  if(viewPanel) viewPanel.scrollTop = 0;
   if(window.innerWidth <= 700) closeMob();
 
   // Load feature script(s) for this page (if any), then run init
