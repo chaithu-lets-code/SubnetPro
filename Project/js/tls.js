@@ -1093,6 +1093,6 @@ function tlsReset() {
 }
 
 // ─── Auto-init ───
-document.addEventListener('DOMContentLoaded', function () {
-  tlsSetMode('tls13');
-});
+function tlsAutoInit() { tlsSetMode('tls13'); }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tlsAutoInit);
+else tlsAutoInit();

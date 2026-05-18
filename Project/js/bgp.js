@@ -4,14 +4,14 @@
   // ═══════════════════════════════════════════════════════════
 
   var BGP_TOPICS = [
-    {id:'fsm',       icon:'🔄', title:'BGP FSM',       sub:'6-State Machine',        badge:'FSM',   bg:'rgba(91,156,246,0.15)',  col:'#5b9cf6'},
-    {id:'msgs',      icon:'📨', title:'Message Types', sub:'OPEN·UPDATE·KA·NOTIF',   badge:'MSG',   bg:'rgba(56,217,192,0.15)',  col:'#38d9c0'},
-    {id:'peers',     icon:'🔗', title:'iBGP vs eBGP',  sub:'Peering Modes',          badge:'PEER',  bg:'rgba(74,222,128,0.15)',  col:'#4ade80'},
-    {id:'bestpath',  icon:'🏆', title:'Best Path',     sub:'LP · AS-PATH · MED',     badge:'ALGO',  bg:'rgba(251,191,36,0.15)',  col:'#fbbf24'},
-    {id:'rr',        icon:'⭐', title:'Route Reflector',sub:'vs Full Mesh',           badge:'RR',    bg:'rgba(244,114,182,0.15)', col:'#f472b6'},
-    {id:'community', icon:'🏷', title:'Communities',   sub:'Policy Tags',            badge:'COMM',  bg:'rgba(167,139,250,0.15)', col:'#a78bfa'},
-    {id:'aggregate', icon:'🗜', title:'Aggregation',   sub:'Route Summarization',    badge:'AGG',   bg:'rgba(56,217,192,0.15)',  col:'#38d9c0'},
-    {id:'multihome', icon:'🌐', title:'Multihoming',   sub:'Traffic Engineering',    badge:'MHOME', bg:'rgba(251,191,36,0.15)',  col:'#fbbf24'}
+    {id:'fsm', icon:'🔄', title:'BGP FSM', sub:'6-State Machine', badge:'FSM', bg:'rgba(91,156,246,0.15)', col:'#5b9cf6', level:'CCNA', focus:'Session Control', why:'Understand how a BGP session is born, stalls, and fails before touching policy tuning.', takeaway:'If you cannot identify the session state precisely, you will misdiagnose the problem and chase the wrong timer, TCP issue, or policy knob.', watch:['Watch which event advances the peer to the next state.','Notice that TCP establishment and BGP establishment are related but not identical.','Use state awareness to separate transport problems from protocol problems.'], cli:['show ip bgp summary','show ip bgp neighbors x.x.x.x']},
+    {id:'msgs', icon:'📨', title:'Message Types', sub:'OPEN·UPDATE·KA·NOTIF', badge:'MSG', bg:'rgba(56,217,192,0.15)', col:'#38d9c0', level:'CCNA', focus:'Packet Semantics', why:'Know what each BGP message actually does so troubleshooting is based on protocol meaning, not memorized names.', takeaway:'Every message type exists for a specific control-plane purpose: negotiate, advertise, maintain, or tear down.', watch:['OPEN negotiates capability and ASN expectations.','UPDATE carries reachability and withdrawals, not just “new routes”.','NOTIFICATION tells you exactly why the session was terminated.'], cli:['show ip bgp neighbors x.x.x.x received-routes','debug ip bgp updates']},
+    {id:'peers', icon:'🔗', title:'iBGP vs eBGP', sub:'Peering Modes', badge:'PEER', bg:'rgba(74,222,128,0.15)', col:'#4ade80', level:'CCNA', focus:'Adjacency Design', why:'Many real BGP design mistakes come from confusing external adjacency rules with internal distribution behavior.', takeaway:'eBGP defines AS boundaries and next-hop behavior; iBGP defines how policy and reachability are propagated inside the AS.', watch:['Observe TTL, next-hop handling, and AS-path changes.','Notice why iBGP needs an underlying IGP to scale cleanly.','Track where split-horizon style behavior blocks route redistribution inside iBGP.'], cli:['show ip bgp summary','show ip route x.x.x.x']},
+    {id:'bestpath', icon:'🏆', title:'Best Path', sub:'LP · AS-PATH · MED', badge:'ALGO', bg:'rgba(251,191,36,0.15)', col:'#fbbf24', level:'CCNP', focus:'Decision Engine', why:'The best path process is where policy becomes traffic movement. If this logic is unclear, route engineering becomes guesswork.', takeaway:'Best path is an elimination process, not a vague “best-looking route” choice. One attribute at the right point can completely change traffic flow.', watch:['See the exact order in which attributes are compared.','Notice that lower-priority attributes matter only when higher ones tie.','Connect each winning attribute to a concrete operator goal.'], cli:['show ip bgp','show ip bgp x.x.x.x bestpath']},
+    {id:'rr', icon:'⭐', title:'Route Reflector', sub:'vs Full Mesh', badge:'RR', bg:'rgba(244,114,182,0.15)', col:'#f472b6', level:'CCNP', focus:'Scale Design', why:'Route reflectors solve scale problems, but they also introduce path visibility and best-path side effects.', takeaway:'Route reflectors reduce session count dramatically, but poor cluster design can distort path visibility and create suboptimal routing.', watch:['Compare full-mesh explosion against reflector simplicity.','Track who sees which routes and why.','Notice how reflection changes propagation without changing every policy.'], cli:['show ip bgp summary','show ip bgp neighbors x.x.x.x advertised-routes']},
+    {id:'community', icon:'🏷', title:'Communities', sub:'Policy Tags', badge:'COMM', bg:'rgba(167,139,250,0.15)', col:'#a78bfa', level:'CCNP', focus:'Policy Signaling', why:'Communities let operators express intent once and enforce it consistently across many edges.', takeaway:'Communities do not change forwarding by themselves; they become powerful only when downstream policy matches them intentionally.', watch:['See how a simple tag becomes a policy signal.','Compare standard intent tags against more structured community usage.','Think in terms of reusable policy metadata, not one-off route-maps.'], cli:['show ip bgp community','show ip bgp large-community']},
+    {id:'aggregate', icon:'🗜', title:'Aggregation', sub:'Route Summarization', badge:'AGG', bg:'rgba(56,217,192,0.15)', col:'#38d9c0', level:'CCNP', focus:'Table Hygiene', why:'Summarization reduces table size and blast radius, but careless aggregation can hide important path detail.', takeaway:'Good aggregation is not just shrinking prefixes. It is a design decision balancing simplicity, visibility, and failure containment.', watch:['Observe what detail is suppressed when summary routes are created.','Notice when summaries improve convergence and when they obscure reality.','Connect aggregation to policy boundaries and operational clarity.'], cli:['show ip bgp','aggregate-address x.x.x.x mask']},
+    {id:'multihome', icon:'🌐', title:'Multihoming', sub:'Traffic Engineering', badge:'MHOME', bg:'rgba(251,191,36,0.15)', col:'#fbbf24', level:'CCIE', focus:'Traffic Engineering', why:'Multihoming is where BGP stops being theory and starts deciding real production ingress and egress behavior.', takeaway:'Inbound and outbound traffic engineering are different problems, controlled with different levers and different expectations.', watch:['Separate inbound TE from outbound TE clearly.','Watch local preference dominate internal exit choice.','See AS-path prepending influence the outside world indirectly, not deterministically.'], cli:['show ip bgp','show ip bgp regexp _65000$']}
   ];
 
   var BA = {
@@ -23,6 +23,7 @@
   // ── Init ──
   function bgpAnimInit() {
     var grid = document.getElementById('bgpAnimGrid');
+    if (grid) grid.innerHTML = '';
     BGP_TOPICS.forEach(function(t) {
       var d = document.createElement('div');
       d.className = 'bgpanim-card' + (t.id==='fsm'?' active':'');
@@ -68,6 +69,7 @@
     });
     var topic = BGP_TOPICS.find(function(t){return t.id===id;});
     if(topic) document.getElementById('bgpAnimCanvasTitle').textContent = topic.icon+'  '+topic.title+' — '+topic.sub;
+    if(topic) bgpAnimRenderMeta(topic);
     document.getElementById('bgpAnimPlayBtn').textContent = '⏸ Pause';
     ['slow','normal','fast'].forEach(function(x){
         var el=document.getElementById('bspeed-'+x);
@@ -117,6 +119,28 @@
     t.textContent=tag; t.style.background=tagBg; t.style.color=tagCol;
     document.getElementById('bgpAnimTitle').textContent = title;
     document.getElementById('bgpAnimDesc').textContent  = desc;
+  }
+
+  function bgpAnimRenderMeta(topic) {
+    var levelEl = document.getElementById('bgpAnimLevel');
+    var focusEl = document.getElementById('bgpAnimFocus');
+    var posEl = document.getElementById('bgpAnimPosition');
+    var whyEl = document.getElementById('bgpAnimWhy');
+    var takeawayEl = document.getElementById('bgpAnimTakeaway');
+    var cliEl = document.getElementById('bgpAnimCli');
+    var watchEl = document.getElementById('bgpAnimWatchList');
+    if (!levelEl || !focusEl || !posEl || !whyEl || !takeawayEl || !cliEl || !watchEl || !topic) return;
+
+    var idx = BGP_TOPICS.findIndex(function(t){ return t.id === topic.id; });
+    levelEl.textContent = topic.level || 'BGP';
+    focusEl.textContent = topic.focus || 'Concept';
+    posEl.textContent = (idx + 1) + ' / ' + BGP_TOPICS.length;
+    whyEl.textContent = topic.why || '';
+    takeawayEl.textContent = topic.takeaway || '';
+    cliEl.textContent = (topic.cli || []).join('\n');
+    watchEl.innerHTML = (topic.watch || []).map(function(item, index) {
+      return '<div class="bgpanim-watch-item"><div class="bgpanim-watch-bullet">' + (index + 1) + '</div><div>' + item + '</div></div>';
+    }).join('');
   }
 
   // ══ SHARED DRAWING UTILITIES ══════════════════════════════

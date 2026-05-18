@@ -10,8 +10,10 @@
   // Speed control
   let dhcpSpeedMode = 'slow';
   function setDhcpSpeed(s) {
+    const validSpeeds = ['slow','normal','fast'];
+    if (!validSpeeds.includes(s)) return;
     dhcpSpeedMode = s;
-    ['slow','normal','fast'].forEach(x => {
+    validSpeeds.forEach(x => {
       const el = document.getElementById('dspeed-' + x);
       if (el) el.classList.toggle('active', x === s);
     });
@@ -21,7 +23,6 @@
   
   // DORA chain updater
   function updateDoraChain(step) {
-    const map = {1:'d',2:'o',3:'r',4:'a'};
     ['d','o','r','a'].forEach((x,i) => {
       const el = document.getElementById('dchain-' + x);
       if (!el) return;
@@ -146,11 +147,134 @@
         {k:'Msg Type', v:'5 (DHCPACK)'},
       ],
       poolState:{offered:null, leased:'192.168.1.100'}, doraHighlight:'a'
+    },
+    {
+      step: 5, title: '5. T1 RENEW — Client Unicasts DHCPREQUEST to Original Server',
+      tag: 'RENEW', tagColor: 'var(--blue)', tagBg: 'rgba(91,156,246,0.12)',
+      desc: 'At <strong>T1 (50%)</strong>, the client enters RENEWING and sends a <strong>unicast DHCPREQUEST</strong> to the original DHCP server. Because the lease is still valid, it uses <strong>ciaddr=192.168.1.100</strong>.',
+      from:'pc', to:'dhcp', via:['sw'],
+      pktColor:'#5b9cf6', pktLabel:'RNEW',
+      pktCard:['DHCPREQUEST (Renew)','Src: 192.168.1.100 → 192.168.1.1','ciaddr: 192.168.1.100','T1 reached (50%)'],
+      wsOptions:[
+        {num:'(53)',name:'Message Type',val:'REQUEST (Renewing)'},
+        {num:'(54)',name:'Server Identifier',val:'192.168.1.1'},
+        {num:'(61)',name:'Client Identifier',val:'AA:BB:CC:DD:EE:FF'},
+        {num:'(50)',name:'Requested IP',val:'(not required in renew)'},
+        {num:'(255)',name:'End',val:'—'},
+      ],
+      fields:[
+        {k:'Client State', v:'RENEWING', c:'#5b9cf6'},
+        {k:'Source IP', v:'192.168.1.100 (ciaddr set)', c:'#38d9c0'},
+        {k:'Dest IP', v:'192.168.1.1 (original server)'},
+        {k:'Source Port', v:'68 (DHCP Client)'},
+        {k:'Dest Port', v:'67 (DHCP Server)'},
+        {k:'Lease Status', v:'Still valid during renew', c:'#4ade80'},
+      ],
+      poolState:{offered:null, leased:'192.168.1.100'}, doraHighlight:'a'
+    },
+    {
+      step: 6, title: '6. T2 REBIND — No Unicast Reply, Client Broadcasts REQUEST',
+      tag: 'REBIND', tagColor: 'var(--amber)', tagBg: 'rgba(251,191,36,0.12)',
+      desc: 'If renew gets no response, client reaches <strong>T2 (87.5%)</strong> and broadcasts DHCPREQUEST to <strong>any available DHCP server</strong>. In this demo, no server replies, so lease countdown continues.',
+      from:'pc', to:'dhcp', via:['sw'],
+      pktColor:'#fbbf24', pktLabel:'RBD',
+      pktCard:['DHCPREQUEST (Rebinding)','Src: 192.168.1.100 → 255.255.255.255','T2 reached (87.5%)','No DHCPACK received'],
+      wsOptions:[
+        {num:'(53)',name:'Message Type',val:'REQUEST (Rebinding)'},
+        {num:'(61)',name:'Client Identifier',val:'AA:BB:CC:DD:EE:FF'},
+        {num:'(54)',name:'Server Identifier',val:'(omitted in rebinding)'},
+        {num:'(255)',name:'End',val:'—'},
+      ],
+      fields:[
+        {k:'Client State', v:'REBINDING', c:'#fbbf24'},
+        {k:'Source IP', v:'192.168.1.100'},
+        {k:'Dest IP', v:'255.255.255.255 (broadcast)'},
+        {k:'Behavior', v:'Trying any DHCP server on subnet'},
+        {k:'Result', v:'No ACK received in this scenario', c:'#f87171'},
+      ],
+      poolState:{offered:null, leased:'192.168.1.100'}, doraHighlight:'a'
+    },
+    {
+      step: 7, title: '7. LEASE EXPIRE — Client Drops Lease and Falls Back to APIPA',
+      tag: 'EXPIRED', tagColor: 'var(--red)', tagBg: 'rgba(248,113,113,0.12)',
+      desc: 'Lease time expires without successful renewal/rebind. Client must <strong>remove the leased IP</strong> and cannot use gateway/DNS from old lease. Typical fallback is <strong>APIPA 169.254.0.0/16</strong> for local-link only.',
+      animate:false,
+      wsOptions:[
+        {num:'(51)',name:'Lease Time',val:'Expired'},
+        {num:'(58)',name:'T1 Renewal',val:'Passed'},
+        {num:'(59)',name:'T2 Rebinding',val:'Passed'},
+      ],
+      fields:[
+        {k:'Client State', v:'INIT (lease lost)', c:'#f87171'},
+        {k:'Old Lease', v:'192.168.1.100 released by timeout'},
+        {k:'Fallback', v:'169.254.10.20/16 (APIPA)', c:'#fbbf24'},
+        {k:'Gateway', v:'Unavailable (local-link only)'},
+        {k:'DNS', v:'Unavailable until new lease'},
+      ],
+      poolState:{offered:null, leased:null, expired:true}
     }
   ];
+
+  const DHCP_STEPS_SUCCESS = DHCP_STEPS.slice(0, 5).concat([
+    {
+      step: 6, title: '6. RENEW ACK — Server Extends Lease (Healthy Network)',
+      tag: 'ACK ✓', tagColor: 'var(--green)', tagBg: 'rgba(74,222,128,0.12)',
+      desc: 'Server responds to unicast renew request with <strong>DHCPACK</strong>. Lease is extended and client stays in BOUND state. No rebind is needed.',
+      from:'dhcp', to:'pc', via:['sw'],
+      pktColor:'#4ade80', pktLabel:'ACK',
+      pktCard:['DHCPACK (Renew)','Lease extended: 86400s','T1/T2 reset','Client remains 192.168.1.100'],
+      wsOptions:[
+        {num:'(53)',name:'Message Type',val:'ACK'},
+        {num:'(51)',name:'Lease Time',val:'86400 sec (renewed)'},
+        {num:'(58)',name:'Renewal Time T1',val:'43200s'},
+        {num:'(59)',name:'Rebinding Time T2',val:'75600s'},
+        {num:'(54)',name:'Server Identifier',val:'192.168.1.1'},
+      ],
+      fields:[
+        {k:'Client State', v:'BOUND (renew success)', c:'#4ade80'},
+        {k:'Assigned IP', v:'192.168.1.100 (unchanged)'},
+        {k:'Lease', v:'Extended to new 24h window', c:'#4ade80'},
+        {k:'T1/T2', v:'Reset for new lease cycle'},
+        {k:'Result', v:'No service interruption', c:'#38d9c0'},
+      ],
+      poolState:{offered:null, leased:'192.168.1.100'}, doraHighlight:'a'
+    }
+  ]);
+
+  let dhcpOutcomeMode = 'fail';
+  function getDhcpSteps() {
+    return dhcpOutcomeMode === 'success' ? DHCP_STEPS_SUCCESS : DHCP_STEPS;
+  }
+  function dhcpMaxStep() {
+    return getDhcpSteps().length;
+  }
+
+  function updateDhcpStepTotal() {
+    const el = document.getElementById('dhcp-step-total');
+    if (el) el.textContent = String(dhcpMaxStep());
+  }
+
+  function setDhcpOutcomeMode(mode) {
+    if (mode !== 'fail' && mode !== 'success') return;
+    dhcpOutcomeMode = mode;
+
+    const failBtn = document.getElementById('dhcp-mode-fail');
+    const okBtn = document.getElementById('dhcp-mode-success');
+    if (failBtn) failBtn.classList.toggle('active', mode === 'fail');
+    if (okBtn) okBtn.classList.toggle('active', mode === 'success');
+
+    updateDhcpStepTotal();
+    dhcpReset();
+  }
   
   let dhcpCurrentStep = 0, dhcpAnimId = null, dhcpPlaying = false, dhcpPlayTimer = null;
   let dhcpActiveNodes = [], dhcpAnimPktCard = null;
+
+  function dhcpCurrentClientIp() {
+    if (dhcpCurrentStep === 0) return '0.0.0.0';
+    if (dhcpCurrentStep <= 6) return '192.168.1.100';
+    return '169.254.10.20';
+  }
   
   function dhcpDrawTopo(activeEdge, pktX, pktY, pktColor, pktLabel, pktCard) {
     const svg = document.getElementById('dhcp-svg');
@@ -171,7 +295,7 @@
     html += `<rect x="240" y="150" width="120" height="18" rx="4" fill="rgba(91,156,246,0.06)" stroke="rgba(91,156,246,0.15)" stroke-width="0.8"/>
       <text x="300" y="162" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="8" fill="#5a6080">192.168.1.0/24</text>`;
   
-    html += svgPC(N.pc.x, N.pc.y, 'pc', 'PC Client\n'+(dhcpCurrentStep>=4?'192.168.1.100':'0.0.0.0'), aNodes.includes('pc'));
+    html += svgPC(N.pc.x, N.pc.y, 'pc', 'PC Client\n'+dhcpCurrentClientIp(), aNodes.includes('pc'));
     html += svgSwitch(N.sw.x, N.sw.y, 'sw', 'L2 Switch', aNodes.includes('sw'));
     html += svgServer(N.dhcp.x, N.dhcp.y, 'dhcp', 'DHCP Server\n192.168.1.1', aNodes.includes('dhcp'), '#38d9c0');
     html += `<text x="${N.dhcp.x}" y="${N.dhcp.y+60}" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="8" fill="#4a5568">Pool: .100–.110</text>`;
@@ -202,7 +326,12 @@
   }
   
   function dhcpAnimateStep(step) {
-    const s = DHCP_STEPS[step - 1];
+    const s = getDhcpSteps()[step - 1];
+    if (!s || s.animate === false) {
+      dhcpDrawTopo(false);
+      dhcpUpdateUI();
+      return;
+    }
     const nodes = DHCP_NODES;
     const path = [s.from, ...s.via, s.to];
     const segments = [];
@@ -247,13 +376,13 @@
     const numEl = document.getElementById('dhcp-step-num');
     const prog = document.getElementById('dhcp-progress');
     if (numEl) numEl.textContent = step;
-    if (prog) prog.style.width = (step / 4 * 100) + '%';
+    if (prog) prog.style.width = (step / dhcpMaxStep() * 100) + '%';
     updateDoraChain(step);
   
     if (step === 0) {
       if (info) info.innerHTML = `<div class="step-tag" style="background:rgba(91,156,246,0.12);color:var(--blue)">READY</div>
         <div class="step-title">Press ▶ Play or Next to begin the DORA process</div>
-        <div class="step-desc">Watch how PC obtains IP via DHCP DORA. All DHCP option numbers are shown on the moving packet.</div>`;
+        <div class="step-desc">Mode: <strong>${dhcpOutcomeMode === 'success' ? 'Renew Success' : 'Rebind Fail'}</strong>. Watch DORA and lease lifecycle behavior.</div>`;
       dhcpRenderPool({offered:null, leased:null});
       document.getElementById('dhcp-pkt-fields').innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:11px;">Start the animation to see packet details & DHCP option numbers…</div>';
       const wsEl0 = document.getElementById('dhcp-ws-options');
@@ -261,7 +390,7 @@
       return;
     }
   
-    const s = DHCP_STEPS[step - 1];
+    const s = getDhcpSteps()[step - 1];
     if (info) info.innerHTML = `<div class="step-tag" style="background:${s.tagBg};color:${s.tagColor}">${s.tag}</div>
       <div class="step-title">${s.title}</div>
       <div class="step-desc">${s.desc}</div>`;
@@ -313,7 +442,8 @@
     }
     pool.innerHTML = html;
     if (leaseInfo) {
-      if (state.leased) leaseInfo.innerHTML = `<span style="color:var(--green)">✓ LEASED:</span> 192.168.1.100 → AA:BB:CC:DD:EE:FF<br>Gateway: 192.168.1.1 | DNS: 8.8.8.8 | TTL: 24h`;
+      if (state.expired) leaseInfo.innerHTML = `<span style="color:var(--red)">✕ LEASE EXPIRED:</span> 192.168.1.100 released<br>Client fallback: 169.254.10.20 (APIPA, local-link only)`;
+      else if (state.leased) leaseInfo.innerHTML = `<span style="color:var(--green)">✓ LEASED:</span> 192.168.1.100 → AA:BB:CC:DD:EE:FF<br>Gateway: 192.168.1.1 | DNS: 8.8.8.8 | TTL: 24h`;
       else if (state.offered) leaseInfo.innerHTML = `<span style="color:var(--amber)">⏳ OFFERED:</span> 192.168.1.100 temporarily reserved…`;
       else leaseInfo.innerHTML = `Waiting for lease negotiation…`;
     }
@@ -322,7 +452,7 @@
   function dhcpStep(dir) {
     if (dhcpAnimId) { cancelAnimationFrame(dhcpAnimId); dhcpAnimId = null; }
     const newStep = dhcpCurrentStep + dir;
-    if (newStep < 0 || newStep > 4) return;
+    if (newStep < 0 || newStep > dhcpMaxStep()) return;
     dhcpCurrentStep = newStep;
     dhcpActiveNodes = [];
     dhcpDrawTopo(false);
@@ -340,7 +470,7 @@
   
   function dhcpAutoPlay() {
     if (!dhcpPlaying) return;
-    if (dhcpCurrentStep >= 4) {
+    if (dhcpCurrentStep >= dhcpMaxStep()) {
       dhcpPlaying = false;
       const btn = document.getElementById('dhcp-play-btn');
       if (btn) btn.textContent = '▶ Play';
@@ -354,7 +484,8 @@
     dhcpPlaying = false;
     clearTimeout(dhcpPlayTimer);
     if (dhcpAnimId) { cancelAnimationFrame(dhcpAnimId); dhcpAnimId = null; }
-    document.getElementById('dhcp-play-btn').textContent = '▶ Play';
+    const btn = document.getElementById('dhcp-play-btn');
+    if (btn) btn.textContent = '▶ Play';
     dhcpCurrentStep = 0;
     dhcpActiveNodes = [];
     ['d','o','r','a'].forEach(x => { const el=document.getElementById('dora-'+x); if(el) el.style.boxShadow=''; });
@@ -365,6 +496,7 @@
 
   
   document.addEventListener("DOMContentLoaded", function () {
+    updateDhcpStepTotal();
     dhcpDrawTopo(false);
     dhcpRenderPool({offered:null, leased:null});
     updateDoraChain(0);

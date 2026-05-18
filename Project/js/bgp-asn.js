@@ -374,5 +374,6 @@
 </div>`;
   }
 
-  document.addEventListener('DOMContentLoaded', asnInit);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', asnInit);
+  else asnInit();
 })();

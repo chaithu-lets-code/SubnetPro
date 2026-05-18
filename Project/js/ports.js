@@ -362,5 +362,6 @@
     portRender();
   }
 
-  document.addEventListener('DOMContentLoaded', portsInit);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', portsInit);
+  else portsInit();
 })();

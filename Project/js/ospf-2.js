@@ -66,6 +66,35 @@ let ospfAnimDur     = 1200;   // packet flight duration ms (was ~40 frames)
 let ospfPkt = { on:false, prog:0, from:'', targets:[], type:'' };
 let ospfPulseRings  = [];   // multi-ring receive pulse (one per target router)
 let ospfTrails      = [];     // [{x,y,alpha}] trail particles
+let ospfMastery = { score:0, total:0, attempted:new Set(), revealed:false };
+
+const OSPF_MASTERY_BANK = {
+  normal: {
+    '2r': {
+      2: { q:'R2 just moved to Init after receiving R1 Hello. What exact check failed to move directly to 2-Way?', a:'R2 did not find its own RID (2.2.2.2) inside R1 neighbor list, so only HelloReceived event applies and state becomes Init.' },
+      6: { q:'In ExStart, which router becomes Master in this 2-router lab and why?', a:'R2 (RID 2.2.2.2) becomes Master because OSPF uses highest Router ID to elect Master/Slave for DBD sequencing.' },
+      10:{ q:'R1 sends LSR in Loading. What does this prove about DBD exchange completeness?', a:'DBD completed successfully and only missing LSAs remain. LSR asks for full LSA bodies after header-only DBD summaries.' }
+    },
+    '3r': {
+      4: { q:'On broadcast multi-access networks, which neighbor pairs can stay at 2-Way and still be healthy?', a:'DROther to DROther pairs can remain in 2-Way by design; full adjacency is only needed with DR/BDR.' },
+      6: { q:'What two fields have the highest DR election priority on broadcast links?', a:'OSPF interface priority first, then highest Router ID as tie-breaker.' }
+    },
+    '4r': {
+      5: { q:'Why does reducing one router priority to 0 matter operationally?', a:'Priority 0 makes it ineligible for DR/BDR, which can force deterministic control-plane design and avoid unwanted DR roles.' }
+    }
+  },
+  trouble: {
+    mtu: {
+      3: { q:'Adjacency is stuck at ExStart with hellos fine. What one packet field should you inspect first?', a:'The DBD Interface MTU field. MTU mismatch is a classic ExStart/Exchange stall cause.' }
+    },
+    timer: {
+      2: { q:'Both sides keep sending hellos but neighbors stay Down. Which two values must match exactly?', a:'Hello interval and Dead interval must match exactly for hello acceptance.' }
+    },
+    area: {
+      2: { q:'How does area mismatch usually appear in state progression?', a:'No progression; hellos are discarded and neighbors remain Down with no valid adjacency build.' }
+    }
+  }
+};
 
 /* ═══════════════════════════════════════════════════════
    COLOUR PALETTE
@@ -230,6 +259,14 @@ function easeOutQuad(t) {
   .ospf-log-item{font-size:10px;padding:5px 10px;border-radius:6px;background:#060d1a;border-left:3px solid #1a2640;color:#3b5278;line-height:1.4;transition:all .25s;cursor:pointer;}
   .ospf-log-item:hover{color:#64748b;background:#0a1525}
   .ospf-log-item.cur{border-left-color:#3b82f6;color:#c4ddff;background:#0a1e38;box-shadow:0 0 10px rgba(59,130,246,.12);}
+  .ospf-mastery-q{font-size:11px;color:#c8d0e0;line-height:1.6;margin-bottom:10px;font-family:'DM Sans',sans-serif;}
+  .ospf-mastery-a{font-size:10.5px;color:#86efac;background:#050c1a;border:1px solid #1a2640;border-radius:7px;padding:10px;line-height:1.6;display:none;margin-bottom:10px;}
+  .ospf-mastery-meta{font-size:10px;color:#3b5278;margin-bottom:8px;}
+  .ospf-mastery-ctrl{display:flex;gap:8px;flex-wrap:wrap;}
+  .ospf-mastery-btn{background:#0d1829;border:1px solid #1e3050;color:#94a3b8;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:700;transition:all .2s;}
+  .ospf-mastery-btn:hover{border-color:#3b82f6;color:#c4ddff;background:#0f1f3a;}
+  .ospf-mastery-btn:disabled{opacity:.45;cursor:not-allowed;}
+  .ospf-mastery-status{font-size:10px;color:#64748b;min-height:14px;margin-top:8px;}
   
   /* ── wireshark panel ─────────────────────────── */
   .ospf-pkt-section{background:#0d1526;border-radius:10px;padding:16px;border:1px solid #1a2640;}
@@ -332,6 +369,19 @@ function easeOutQuad(t) {
         <div class="ospf-panel">
           <div class="ospf-panel-title">State Transition Log</div>
           <div class="ospf-log-box" id="ospfLog"></div>
+        </div>
+
+        <div class="ospf-panel">
+          <div class="ospf-panel-title">Mastery Challenge</div>
+          <div class="ospf-mastery-meta" id="ospfMasteryScore">Score 0 / 0</div>
+          <div class="ospf-mastery-q" id="ospfMasteryQuestion">Move through steps to unlock challenge checkpoints.</div>
+          <div class="ospf-mastery-a" id="ospfMasteryAnswer"></div>
+          <div class="ospf-mastery-ctrl">
+            <button class="ospf-mastery-btn" id="ospfRevealAns">Reveal Answer</button>
+            <button class="ospf-mastery-btn" id="ospfMarkGood" disabled>I Got It</button>
+            <button class="ospf-mastery-btn" id="ospfMarkBad" disabled="">I Missed It</button>
+          </div>
+          <div class="ospf-mastery-status" id="ospfMasteryStatus"></div>
         </div>
   
       </div>
@@ -463,6 +513,106 @@ function ospfBindControls() {
     // also scale animation duration
     ospfAnimDur  = Math.max(400, Math.round(1400 / v));
   });
+
+  document.getElementById('ospfRevealAns').addEventListener('click', ospfRevealMasteryAnswer);
+  document.getElementById('ospfMarkGood').addEventListener('click', () => ospfScoreMastery(true));
+  document.getElementById('ospfMarkBad').addEventListener('click', () => ospfScoreMastery(false));
+}
+
+function ospfGetMasteryEntry() {
+  const stepNo = ospfCurrentStep + 1;
+  if (ospfTabMode === 'trouble') {
+    const t = OSPF_MASTERY_BANK.trouble[ospfTScene] || {};
+    return t[stepNo] || null;
+  }
+  const n = OSPF_MASTERY_BANK.normal[ospfTopo] || {};
+  return n[stepNo] || null;
+}
+
+function ospfGetMasteryKey() {
+  const modeKey = ospfTabMode === 'trouble' ? 'trouble:' + ospfTScene : 'normal:' + ospfTopo;
+  return modeKey + ':step:' + (ospfCurrentStep + 1);
+}
+
+function ospfResetMastery() {
+  ospfMastery = { score:0, total:0, attempted:new Set(), revealed:false };
+}
+
+function ospfUpdateMasteryPanel() {
+  const qEl = document.getElementById('ospfMasteryQuestion');
+  const aEl = document.getElementById('ospfMasteryAnswer');
+  const sEl = document.getElementById('ospfMasteryStatus');
+  const scoreEl = document.getElementById('ospfMasteryScore');
+  const revealBtn = document.getElementById('ospfRevealAns');
+  const goodBtn = document.getElementById('ospfMarkGood');
+  const badBtn = document.getElementById('ospfMarkBad');
+  if (!qEl || !aEl || !sEl || !scoreEl || !revealBtn || !goodBtn || !badBtn) return;
+
+  const entry = ospfGetMasteryEntry();
+  const key = ospfGetMasteryKey();
+  scoreEl.textContent = 'Score ' + ospfMastery.score + ' / ' + ospfMastery.total;
+  ospfMastery.revealed = false;
+
+  if (!entry) {
+    qEl.textContent = 'No checkpoint at this step. Continue to the next transition.';
+    aEl.style.display = 'none';
+    aEl.textContent = '';
+    sEl.textContent = '';
+    revealBtn.disabled = true;
+    goodBtn.disabled = true;
+    badBtn.disabled = true;
+    return;
+  }
+
+  qEl.textContent = entry.q;
+  aEl.textContent = entry.a;
+  aEl.style.display = 'none';
+  sEl.textContent = ospfMastery.attempted.has(key) ? 'Checkpoint already scored. Move to another step.' : '';
+  revealBtn.disabled = false;
+  goodBtn.disabled = true;
+  badBtn.disabled = true;
+}
+
+function ospfRevealMasteryAnswer() {
+  const entry = ospfGetMasteryEntry();
+  if (!entry) return;
+  const aEl = document.getElementById('ospfMasteryAnswer');
+  const goodBtn = document.getElementById('ospfMarkGood');
+  const badBtn = document.getElementById('ospfMarkBad');
+  const sEl = document.getElementById('ospfMasteryStatus');
+  if (!aEl || !goodBtn || !badBtn || !sEl) return;
+
+  const key = ospfGetMasteryKey();
+  aEl.style.display = 'block';
+  ospfMastery.revealed = true;
+  if (ospfMastery.attempted.has(key)) {
+    goodBtn.disabled = true;
+    badBtn.disabled = true;
+    sEl.textContent = 'Checkpoint already scored.';
+    return;
+  }
+  goodBtn.disabled = false;
+  badBtn.disabled = false;
+  sEl.textContent = 'Self-score this checkpoint now.';
+}
+
+function ospfScoreMastery(correct) {
+  const entry = ospfGetMasteryEntry();
+  const key = ospfGetMasteryKey();
+  const scoreEl = document.getElementById('ospfMasteryScore');
+  const sEl = document.getElementById('ospfMasteryStatus');
+  const goodBtn = document.getElementById('ospfMarkGood');
+  const badBtn = document.getElementById('ospfMarkBad');
+  if (!entry || !scoreEl || !sEl || !goodBtn || !badBtn) return;
+  if (ospfMastery.attempted.has(key)) return;
+
+  ospfMastery.total += 1;
+  if (correct) ospfMastery.score += 1;
+  ospfMastery.attempted.add(key);
+  scoreEl.textContent = 'Score ' + ospfMastery.score + ' / ' + ospfMastery.total;
+  sEl.textContent = correct ? 'Great. Marked as correct.' : 'Logged. Re-run this step until you can explain it cleanly.';
+  goodBtn.disabled = true;
+  badBtn.disabled = true;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -527,6 +677,7 @@ function ospfResetSim() {
   ospfTrails = [];
   ospfPulseRings = [];
   cancelAnimationFrame(ospfAnimId);
+  ospfResetMastery();
   ospfLoadSteps();
   ospfRender();
   ospfUpdatePanel();
@@ -1030,6 +1181,7 @@ function ospfUpdatePanel() {
   if (active) active.scrollIntoView({ block:'nearest', behavior:'smooth' });
 
   ospfUpdateWireshark(s);
+  ospfUpdateMasteryPanel();
 }
 
 function ospfUpdateWireshark(s) {
